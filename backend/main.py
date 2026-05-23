@@ -6,7 +6,7 @@ from datetime import datetime, date, timedelta
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -361,7 +361,6 @@ def draft_all_status(campaign_id: int, db: Session = Depends(get_db)):
 @app.post("/api/campaigns/{campaign_id}/draft-all")
 async def draft_all(
     campaign_id: int,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     x_ai_providers: Optional[str] = Header(default=None),
     x_gemini_key: Optional[str] = Header(default=None),
@@ -375,8 +374,8 @@ async def draft_all(
     providers_config = _parse_providers(x_ai_providers)
     legacy_keys = [k.strip() for k in x_gemini_keys.split(",")] if x_gemini_keys else []
 
-    background_tasks.add_task(
-        _draft_all_task, campaign_id, providers_config, x_gemini_key, legacy_keys, x_gemini_model
+    asyncio.create_task(
+        _draft_all_task(campaign_id, providers_config, x_gemini_key, legacy_keys, x_gemini_model)
     )
     return {"message": "Batch draft started"}
 
@@ -629,7 +628,6 @@ async def _drip_send_task(batch_id: int, smtp_cfg: SmtpConfigSchema, sender_name
 async def send_batch(
     batch_id: int,
     smtp_config: SmtpConfigSchema,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     batch = db.query(SendBatch).filter(SendBatch.id == batch_id).first()
@@ -641,17 +639,15 @@ async def send_batch(
         raise HTTPException(status_code=400, detail="Batch already sent")
 
     campaign = db.query(Campaign).filter(Campaign.id == batch.campaign_id).first()
+    sender_name = campaign.sender_name
+    sender_email = campaign.sender_email
 
     stop_event = asyncio.Event()
     _sending_batches[batch_id] = stop_event
 
-    background_tasks.add_task(
-        _drip_send_task,
-        batch_id,
-        smtp_config,
-        campaign.sender_name,
-        campaign.sender_email,
-    )
+    asyncio.create_task(_drip_send_task(
+        batch_id, smtp_config, sender_name, sender_email,
+    ))
     return {"message": f"Drip sending batch {batch.label} ({batch.total} emails)"}
 
 
@@ -659,10 +655,9 @@ async def send_batch(
 async def send_all_batches(
     campaign_id: int,
     smtp_config: SmtpConfigSchema,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Start all pending/paused batches sequentially in the background."""
+    """Start all pending/paused batches sequentially as a true async task."""
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
@@ -676,26 +671,24 @@ async def send_all_batches(
     if not pending_batches:
         raise HTTPException(status_code=400, detail="No pending batches to send")
 
-    already_sending = [b.id for b in pending_batches if b.id in _sending_batches]
-    if already_sending:
+    if any(b.id in _sending_batches for b in pending_batches):
         raise HTTPException(status_code=400, detail="A batch is already sending")
 
+    # Capture plain values before DB session closes
     batch_ids = [b.id for b in pending_batches]
-
-    master_stop = asyncio.Event()
+    sender_name = campaign.sender_name
+    sender_email = campaign.sender_email
 
     async def _send_all_sequentially():
-        for bid in batch_ids:
-            if master_stop.is_set():
-                break
+        for i, bid in enumerate(batch_ids):
             stop_event = asyncio.Event()
             _sending_batches[bid] = stop_event
-            await _drip_send_task(bid, smtp_config, campaign.sender_name, campaign.sender_email)
-            # Cooldown between batches to protect SMTP reputation
-            if bid != batch_ids[-1] and not master_stop.is_set():
+            await _drip_send_task(bid, smtp_config, sender_name, sender_email)
+            # Wait full cooldown between batches — but not after the last one
+            if i < len(batch_ids) - 1:
                 await asyncio.sleep(BATCH_COOLDOWN_MIN * 60)
 
-    background_tasks.add_task(_send_all_sequentially)
+    asyncio.create_task(_send_all_sequentially())
     return {"message": f"Sending {len(batch_ids)} batches sequentially", "batch_ids": batch_ids}
 
 
