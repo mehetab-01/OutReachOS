@@ -289,10 +289,10 @@ export default function ReviewScreen() {
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-gray-400">BODY</label>
                   <Textarea
-                    rows={12}
+                    rows={14}
                     value={getField(activeLead.id, "body", activeDraft.body || "")}
                     onChange={(e) => handleEdit(activeLead.id, "body", e.target.value)}
-                    className="text-sm resize-none leading-relaxed"
+                    className="text-sm resize-none leading-relaxed whitespace-pre-wrap"
                   />
                 </div>
               </div>

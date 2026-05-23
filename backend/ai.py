@@ -176,9 +176,11 @@ STRICT RULES — violate any of these and the output is rejected:
 3. Mention a concrete fact: other {category} businesses in {lead['city']} that are booking online, running Google Ads, or using AI chatbots to handle enquiries 24/7 — and {lead['name']} is missing this revenue.
 4. What we do: Arcen Studio builds websites + AI automations (auto-reply bots, booking systems, lead capture) for local businesses. One-time build, no monthly agency retainer.
 5. CTA: Invite them to a quick 5-minute Zoom call — but the ONLY way to get there is replying to this email. Write it naturally, like "If you're up for a quick 5-min Zoom to see if it's a fit, just reply here." No Calendly links, no phone numbers, no "schedule a call", no "book a meeting".
-6. Sign off: {sender}, Arcen Studio
+6. Sign off: {sender}\\nArcen Studio
 7. Body must be under 130 words. Short sentences. No bullet points. No corporate speak. Sound like a human who did 5 minutes of research, not a marketing department.
 8. Subject line: specific to {lead['name']}, max 8 words, no exclamation marks, no all-caps.
+9. FORMATTING: The body field must use \\n\\n to separate each paragraph. Structure must be exactly 4 paragraphs: (1) hook/observation, (2) competitor gap, (3) what we do + no retainer, (4) CTA line. Then a blank line, then the sign-off. Like this example structure:
+   "Other groomers in Coal City are booking online while you\\'re still on calls.\\n\\nPet Palace runs Google Ads and an AI chatbot — they\\'re pulling enquiries 24/7 without picking up the phone.\\n\\nWe build websites and AI automations for local businesses. One-time cost, no monthly agency fees.\\n\\nIf you\\'re up for a quick 5-min Zoom to see if it\\'s a fit, just reply here.\\n\\n{sender}\\nArcen Studio"
 
 OUTPUT FORMAT (strict JSON, no markdown, no code fences):
 {{"research":"2 sentence max: what {category} businesses in {lead['city']} are doing online that {lead['name']} isn't — be specific","subject":"...","body":"..."}}"""
