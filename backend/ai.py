@@ -156,35 +156,32 @@ def _env_key(provider: str) -> Optional[str]:
 # ── Prompt ────────────────────────────────────────────────────────────────────
 
 def _build_prompt(lead: dict, campaign: dict) -> str:
-    return f"""STUDIO: Arcen Studio — Mumbai, India
-WHAT WE DO: {campaign['pitch']}
-SERVICES: {campaign['services']}
-TONE: {campaign['tone']}
-CTA: We want {campaign['cta']}
+    category = lead['category'].replace('_', ' ').title()
+    review = lead.get('review_score') or ''
+    review_note = f"{review} stars on Google" if review else "active on Google Maps"
+    facebook = lead.get('facebook_url') or ''
+    social_note = f"Facebook at {facebook}" if facebook else "no social media presence"
+    sender = campaign['sender_name']
 
-LEAD:
-- Business Name: {lead['name']}
-- Category: {lead['category'].replace('_', ' ').title()}
-- City: {lead['city']}
-- Phone: {lead.get('phone') or 'N/A'}
-- Google Review Score: {lead.get('review_score') or 'N/A'}
-- Facebook: {lead.get('facebook_url') or 'None found'}
-- Has Website: NO (scraped from Google Maps "no website" filter)
+    return f"""You are writing a cold email on behalf of {sender} from Arcen Studio (Mumbai, India — web design & AI automation agency).
 
-YOUR TASK:
-1. Write a SHORT research summary (2-3 sentences) about what this type of business typically lacks online and where their competitors are ahead.
-2. Write a cold email:
-   - Subject line using the business name naturally
-   - Opening that shows you know their specific business type
-   - 1-2 sentences on what they're missing vs competitors
-   - Brief mention of what we offer (no features list)
-   - Clear CTA: {campaign['cta']}
-   - Sign off from {campaign['sender_name']} at Arcen Studio
-   - Under 150 words total body
-   - Must NOT sound like a mass email
+LEAD INFO:
+- Business: {lead['name']} ({category}, {lead['city']})
+- Online presence: {review_note}, {social_note}, NO WEBSITE
+- Services we offer: {campaign['services']}
 
-Respond ONLY in this exact JSON format:
-{{"research":"...","subject":"...","body":"..."}}"""
+STRICT RULES — violate any of these and the output is rejected:
+1. FORBIDDEN phrases (never use): "I hope this email finds you", "I came across", "I noticed", "game-changer", "take your business to the next level", "I wanted to reach out", "digital presence", "online presence", "leverage", "revolutionary", "innovative", "transform your business"
+2. Opening line must be a single punchy observation — NOT an introduction. No "Hi, my name is". Jump straight into a specific insight about their situation or their competitors.
+3. Mention a concrete fact: other {category} businesses in {lead['city']} that are booking online, running Google Ads, or using AI chatbots to handle enquiries 24/7 — and {lead['name']} is missing this revenue.
+4. What we do: Arcen Studio builds websites + AI automations (auto-reply bots, booking systems, lead capture) for local businesses. One-time build, no monthly agency retainer.
+5. CTA is exactly: "If this sounds useful, just reply to this email." — nothing else, no phone calls, no calendly links, no "let's hop on a call".
+6. Sign off: {sender}, Arcen Studio
+7. Body must be under 130 words. Short sentences. No bullet points. No corporate speak. Sound like a human who did 5 minutes of research, not a marketing department.
+8. Subject line: specific to {lead['name']}, max 8 words, no exclamation marks, no all-caps.
+
+OUTPUT FORMAT (strict JSON, no markdown, no code fences):
+{{"research":"2 sentence max: what {category} businesses in {lead['city']} are doing online that {lead['name']} isn't — be specific","subject":"...","body":"..."}}"""
 
 
 def _parse_json(raw: str) -> dict:
