@@ -94,7 +94,7 @@ export default function GenerateScreen() {
   };
 
   const handleDraftOne = async (leadId) => {
-    // Optimistically flip status in context so badge updates instantly
+    // Optimistically show drafting badge immediately
     setLeads((prev) => prev.map((l) =>
       l.id === leadId
         ? { ...l, draft: { ...(l.draft || {}), status: "drafting", error_msg: null } }
@@ -102,18 +102,24 @@ export default function GenerateScreen() {
     ));
     setSingleDrafting((p) => ({ ...p, [leadId]: true }));
 
-    // Poll while waiting so any intermediate state (queued→drafting→drafted) shows up
-    const pollId = setInterval(fetchLeads, 1500);
     try {
+      // Fire-and-forget — backend returns immediately after setting status="drafting"
       await draftSingle(leadId);
-      await fetchLeads();
     } catch (err) {
       toast({ title: "Draft failed", description: err.message, variant: "destructive" });
-      await fetchLeads();
-    } finally {
-      clearInterval(pollId);
       setSingleDrafting((p) => ({ ...p, [leadId]: false }));
+      return;
     }
+
+    // Poll until this lead is no longer "drafting"
+    const pollId = setInterval(async () => {
+      const updated = await fetchLeads();
+      const lead = updated?.find((l) => l.id === leadId);
+      if (!lead || lead.draft?.status !== "drafting") {
+        clearInterval(pollId);
+        setSingleDrafting((p) => ({ ...p, [leadId]: false }));
+      }
+    }, 1500);
   };
 
   return (

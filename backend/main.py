@@ -168,12 +168,52 @@ def get_leads(campaign_id: int, db: Session = Depends(get_db)):
 
 # ── Drafts ─────────────────────────────────────────────────────────────────────
 
+async def _draft_single_task(
+    lead_id: int,
+    providers_config: Optional[list],
+    api_key: Optional[str],
+    api_keys: list,
+    model: Optional[str],
+):
+    """Background task: runs AI draft and writes result to DB."""
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        lead = db.query(Lead).filter(Lead.id == lead_id).first()
+        if not lead:
+            return
+        draft = lead.draft
+        if not draft:
+            return
+        try:
+            result = await draft_lead(
+                _lead_to_dict(lead),
+                _campaign_to_dict(lead.campaign),
+                providers_config=providers_config,
+                api_key=api_key,
+                api_keys=api_keys,
+                model=model,
+            )
+            draft.research = result["research"]
+            draft.subject = result["subject"]
+            draft.body = result["body"]
+            draft.model_used = f"{result.get('provider_used','')}/{result.get('model_used','')}"
+            draft.status = "drafted"
+            draft.error_msg = None
+        except Exception as e:
+            draft.status = "error"
+            draft.error_msg = str(e)
+        db.commit()
+    finally:
+        db.close()
+
+
 @app.post("/api/leads/{lead_id}/draft")
 async def draft_single(
     lead_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     x_ai_providers: Optional[str] = Header(default=None),
-    # legacy headers kept for compatibility
     x_gemini_key: Optional[str] = Header(default=None),
     x_gemini_keys: Optional[str] = Header(default=None),
     x_gemini_model: Optional[str] = Header(default=None),
@@ -186,9 +226,9 @@ async def draft_single(
     if not draft:
         draft = Draft(lead_id=lead.id, status="pending")
         db.add(draft)
-        db.commit()
-        db.refresh(draft)
+        db.flush()
 
+    # Commit "drafting" immediately so polls see it right away
     draft.status = "drafting"
     draft.error_msg = None
     db.commit()
@@ -196,27 +236,10 @@ async def draft_single(
     providers_config = _parse_providers(x_ai_providers)
     legacy_keys = [k.strip() for k in x_gemini_keys.split(",")] if x_gemini_keys else []
 
-    try:
-        result = await draft_lead(
-            _lead_to_dict(lead),
-            _campaign_to_dict(lead.campaign),
-            providers_config=providers_config,
-            api_key=x_gemini_key,
-            api_keys=legacy_keys,
-            model=x_gemini_model,
-        )
-        draft.research = result["research"]
-        draft.subject = result["subject"]
-        draft.body = result["body"]
-        draft.model_used = f"{result.get('provider_used','')}/{result.get('model_used','')}"
-        draft.status = "drafted"
-    except Exception as e:
-        draft.status = "error"
-        draft.error_msg = str(e)
-
-    db.commit()
-    db.refresh(draft)
-    return {"status": draft.status, "draft_id": draft.id, "model_used": draft.model_used}
+    background_tasks.add_task(
+        _draft_single_task, lead_id, providers_config, x_gemini_key, legacy_keys, x_gemini_model
+    )
+    return {"status": "drafting", "draft_id": draft.id}
 
 
 # track running batch stop-events per campaign

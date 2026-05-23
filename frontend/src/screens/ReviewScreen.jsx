@@ -76,26 +76,36 @@ export default function ReviewScreen() {
   const [redrafting, setRedrafting] = useState(false);
 
   const redraft = async (leadId) => {
-    // Optimistically show drafting in the sidebar badge immediately
+    // Optimistically show drafting badge immediately
     setLeads((prev) => prev.map((l) =>
       l.id === leadId
         ? { ...l, draft: { ...(l.draft || {}), status: "drafting", error_msg: null } }
         : l
     ));
     setRedrafting(true);
-    const pollId = setInterval(refresh, 1500);
+
     try {
       await draftSingle(leadId);
-      await refresh();
-      setEditedFields((p) => { const n = { ...p }; delete n[leadId]; return n; });
-      toast({ title: "Redrafted" });
     } catch (err) {
       toast({ title: "Redraft failed", description: err.message, variant: "destructive" });
-      await refresh();
-    } finally {
-      clearInterval(pollId);
       setRedrafting(false);
+      return;
     }
+
+    // Poll until no longer drafting
+    const pollId = setInterval(async () => {
+      await refresh();
+      // read latest leads from context after refresh
+      setLeads((current) => {
+        const lead = current.find((l) => l.id === leadId);
+        if (!lead || lead.draft?.status !== "drafting") {
+          clearInterval(pollId);
+          setRedrafting(false);
+          setEditedFields((p) => { const n = { ...p }; delete n[leadId]; return n; });
+        }
+        return current;
+      });
+    }, 1500);
   };
 
   return (
