@@ -83,15 +83,46 @@ class SmtpConfig(BaseModel):
     password: str
 
 
+class SendBatchCreate(BaseModel):
+    batch_size: int = 20
+
+
+class SendBatchOut(BaseModel):
+    id: int
+    campaign_id: int
+    label: str
+    status: str
+    total: int
+    sent_count: int
+    error_count: int
+    smtp_user: str
+    created_at: datetime
+    started_at: Optional[datetime]
+    finished_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
 class SendLogOut(BaseModel):
     id: int
     draft_id: int
     lead_id: int
+    batch_id: Optional[int]
     sent_at: datetime
     smtp_response: str
+    smtp_user: str
     lead_name: str
     lead_email: str
     subject: str
 
     class Config:
         from_attributes = True
+
+
+class SendStatsOut(BaseModel):
+    today: int
+    this_month: int
+    all_time: int
+    daily_cap: int
+    remaining_today: int

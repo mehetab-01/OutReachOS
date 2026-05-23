@@ -4,6 +4,7 @@ const STATUS_MAP = {
   drafting: { label: "Drafting…",  className: "bg-amber-50 text-amber-700 animate-pulse" },
   drafted:  { label: "Drafted",    className: "bg-emerald-50 text-emerald-700" },
   approved: { label: "Approved",   className: "bg-green-100 text-green-800" },
+  batched:  { label: "Batched",     className: "bg-violet-50 text-violet-700" },
   skipped:  { label: "Skipped",    className: "bg-gray-100 text-gray-500" },
   sent:     { label: "Sent",       className: "bg-blue-50 text-blue-700" },
   error:    { label: "Error",      className: "bg-red-50 text-red-700" },

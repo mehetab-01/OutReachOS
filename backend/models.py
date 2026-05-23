@@ -18,6 +18,7 @@ class Campaign(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     leads = relationship("Lead", back_populates="campaign", cascade="all, delete-orphan")
+    send_batches = relationship("SendBatch", back_populates="campaign", cascade="all, delete-orphan")
 
 
 class Lead(Base):
@@ -55,13 +56,35 @@ class Draft(Base):
     send_logs = relationship("SendLog", back_populates="draft", cascade="all, delete-orphan")
 
 
+class SendBatch(Base):
+    __tablename__ = "send_batches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=False)
+    label = Column(String, nullable=False)          # "Batch A", "Batch B", …
+    status = Column(String, default="pending")      # pending / sending / sent / error
+    total = Column(Integer, default=0)
+    sent_count = Column(Integer, default=0)
+    error_count = Column(Integer, default=0)
+    smtp_user = Column(String, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+
+    campaign = relationship("Campaign", back_populates="send_batches")
+    send_logs = relationship("SendLog", back_populates="batch", cascade="all, delete-orphan")
+
+
 class SendLog(Base):
     __tablename__ = "send_logs"
 
     id = Column(Integer, primary_key=True, index=True)
     draft_id = Column(Integer, ForeignKey("drafts.id"), nullable=False)
     lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
+    batch_id = Column(Integer, ForeignKey("send_batches.id"), nullable=True)
     sent_at = Column(DateTime, default=datetime.utcnow)
     smtp_response = Column(Text, default="")
+    smtp_user = Column(String, default="")
 
     draft = relationship("Draft", back_populates="send_logs")
+    batch = relationship("SendBatch", back_populates="send_logs")

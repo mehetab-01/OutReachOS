@@ -42,8 +42,22 @@ export const getDraftAllStatus = (campaignId) =>
 export const patchDraft = (draftId, data) =>
   api.patch(`/api/drafts/${draftId}`, data).then((r) => r.data);
 
-// Send
-export const sendCampaign = (campaignId, smtpConfig) =>
-  api.post(`/api/campaigns/${campaignId}/send`, smtpConfig).then((r) => r.data);
+// Send stats
+export const getSendStats = (campaignId, smtpUser = "") =>
+  api.get(`/api/campaigns/${campaignId}/send-stats`, { params: { smtp_user: smtpUser } }).then((r) => r.data);
+
+// Batches
+export const listBatches = (campaignId) =>
+  api.get(`/api/campaigns/${campaignId}/batches`).then((r) => r.data);
+export const createBatches = (campaignId, batchSize) =>
+  api.post(`/api/campaigns/${campaignId}/batches`, { batch_size: batchSize }).then((r) => r.data);
+export const sendBatch = (batchId, smtpConfig) =>
+  api.post(`/api/batches/${batchId}/send`, smtpConfig).then((r) => r.data);
+export const stopBatch = (batchId) =>
+  api.post(`/api/batches/${batchId}/stop`).then((r) => r.data);
+export const getBatchStatus = (batchId) =>
+  api.get(`/api/batches/${batchId}/status`).then((r) => r.data);
+export const deleteBatch = (batchId) =>
+  api.delete(`/api/batches/${batchId}`).then((r) => r.data);
 export const getSendLog = (campaignId) =>
   api.get(`/api/campaigns/${campaignId}/sendlog`).then((r) => r.data);
