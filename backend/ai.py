@@ -33,10 +33,10 @@ PROVIDERS = {
     "groq": {
         "label": "Groq (Ultra-fast)",
         "models": [
-            {"id": "llama-3.3-70b-versatile", "label": "Llama 3.3 70B", "note": "Best on Groq"},
-            {"id": "llama-3.1-8b-instant",    "label": "Llama 3.1 8B",  "note": "Fastest"},
-            {"id": "mixtral-8x7b-32768",      "label": "Mixtral 8x7B",  "note": ""},
-            {"id": "gemma2-9b-it",            "label": "Gemma 2 9B",    "note": ""},
+            {"id": "llama-3.1-8b-instant",                    "label": "Llama 3.1 8B",         "note": "14.4K/day · Recommended"},
+            {"id": "meta-llama/llama-4-scout-17b-16e-instruct","label": "Llama 4 Scout 17B",    "note": "1K/day · high quality"},
+            {"id": "llama-3.3-70b-versatile",                  "label": "Llama 3.3 70B",        "note": "1K/day · best quality"},
+            {"id": "qwen/qwen3-32b",                           "label": "Qwen3 32B",            "note": "1K/day · 60 RPM"},
         ],
     },
     "openrouter": {
@@ -76,8 +76,9 @@ AUTO_FALLBACK_CHAIN = [
     ("gemini",     "gemini-2.5-flash"),
     ("gemini",     "gemini-2.0-flash"),
     ("gemini",     "gemini-flash-latest"),
-    ("groq",       "llama-3.3-70b-versatile"),
-    ("groq",       "llama-3.1-8b-instant"),
+    ("groq",       "llama-3.1-8b-instant"),                     # 14.4K RPD — best Groq quota
+    ("groq",       "meta-llama/llama-4-scout-17b-16e-instruct"), # 1K RPD · better quality
+    ("groq",       "llama-3.3-70b-versatile"),                  # 1K RPD · use last
     ("openrouter", "mistralai/mistral-7b-instruct:free"),
     ("openrouter", "meta-llama/llama-3.2-3b-instruct:free"),
     ("openrouter", "qwen/qwen3-8b:free"),
@@ -85,12 +86,17 @@ AUTO_FALLBACK_CHAIN = [
 ]
 
 
+_GROQ_NAMESPACED = {"meta-llama/", "qwen/", "openai/"}
+
 def _detect_provider(model_id: str) -> str:
     if model_id.startswith("gemini") or model_id.startswith("gemma"):
         return "gemini"
     if model_id.startswith("claude"):
         return "claude"
     if "/" in model_id:
+        # Groq hosts some models under vendor namespaces
+        if any(model_id.startswith(prefix) for prefix in _GROQ_NAMESPACED):
+            return "groq"
         return "openrouter"
     return "groq"
 
