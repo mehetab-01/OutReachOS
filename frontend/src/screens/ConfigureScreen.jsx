@@ -14,51 +14,66 @@ import { useToast } from "../components/ui/use-toast";
 const TONES = ["Professional", "Conversational", "Direct"];
 
 const PROVIDER_META = {
-  gemini:      { label: "Google Gemini",        color: "bg-blue-50 text-blue-700 border-blue-200",   dot: "bg-blue-500" },
-  claude:      { label: "Anthropic Claude",      color: "bg-orange-50 text-orange-700 border-orange-200", dot: "bg-orange-500" },
-  groq:        { label: "Groq (Ultra-fast)",     color: "bg-green-50 text-green-700 border-green-200",  dot: "bg-green-500" },
-  openrouter:  { label: "OpenRouter (Free)",     color: "bg-purple-50 text-purple-700 border-purple-200", dot: "bg-purple-500" },
+  gemini:     { label: "Google Gemini",        color: "bg-blue-50 text-blue-700 border-blue-200",    dot: "bg-blue-500" },
+  groq:       { label: "Groq (Ultra-fast)",    color: "bg-green-50 text-green-700 border-green-200",  dot: "bg-green-500" },
+  cerebras:   { label: "Cerebras (Free·Fast)", color: "bg-cyan-50 text-cyan-700 border-cyan-200",     dot: "bg-cyan-500" },
+  mistral:    { label: "Mistral AI (Free)",    color: "bg-yellow-50 text-yellow-700 border-yellow-200", dot: "bg-yellow-500" },
+  openrouter: { label: "OpenRouter (Free)",    color: "bg-purple-50 text-purple-700 border-purple-200", dot: "bg-purple-500" },
+  claude:     { label: "Anthropic Claude",     color: "bg-orange-50 text-orange-700 border-orange-200", dot: "bg-orange-500" },
 };
 
 const DEFAULT_MODELS_BY_PROVIDER = {
-  gemini:     [
-    { id: "gemini-2.5-flash",      label: "Gemini 2.5 Flash",      note: "Recommended · free tier" },
-    { id: "gemini-2.0-flash",      label: "Gemini 2.0 Flash",      note: "200 req/day free" },
-    { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite", note: "Cheapest" },
-    { id: "gemini-2.5-pro",        label: "Gemini 2.5 Pro",        note: "Best quality" },
+  gemini: [
+    { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite", note: "1K/day · 15 RPM · fastest free" },
+    { id: "gemini-2.5-flash",      label: "Gemini 2.5 Flash",      note: "250/day · 10 RPM · best quality" },
+    { id: "gemini-2.0-flash",      label: "Gemini 2.0 Flash",      note: "100/day · 5 RPM" },
     { id: "gemini-flash-latest",   label: "Gemini Flash Latest",   note: "Always latest" },
   ],
-  claude: [
-    { id: "claude-haiku-4-5-20251001",      label: "Claude Haiku 4.5",  note: "Fastest" },
-    { id: "claude-sonnet-4-6",              label: "Claude Sonnet 4.6", note: "Recommended" },
-    { id: "claude-opus-4-7",               label: "Claude Opus 4.7",   note: "Most capable" },
-  ],
   groq: [
-    { id: "llama-3.3-70b-versatile",        label: "Llama 3.3 70B",    note: "Best on Groq" },
-    { id: "llama-3.1-8b-instant",           label: "Llama 3.1 8B",     note: "Fastest" },
-    { id: "mixtral-8x7b-32768",             label: "Mixtral 8x7B",     note: "" },
-    { id: "gemma2-9b-it",                   label: "Gemma 2 9B",       note: "" },
+    { id: "llama-3.1-8b-instant",                     label: "Llama 3.1 8B",      note: "14.4K/day · 30 RPM · best quota" },
+    { id: "meta-llama/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout 17B", note: "1K/day · 30 RPM · 30K TPM" },
+    { id: "llama-3.3-70b-versatile",                  label: "Llama 3.3 70B",     note: "1K/day · best quality" },
+    { id: "qwen/qwen3-32b",                           label: "Qwen3 32B",         note: "1K/day · 60 RPM" },
+  ],
+  cerebras: [
+    { id: "llama-3.1-8b",  label: "Llama 3.1 8B",  note: "1M tok/day · 5 RPM · free" },
+    { id: "llama-3.3-70b", label: "Llama 3.3 70B", note: "1M tok/day · 5 RPM · free" },
+    { id: "llama-4-scout", label: "Llama 4 Scout",  note: "1M tok/day · 5 RPM · free" },
+  ],
+  mistral: [
+    { id: "mistral-small-latest", label: "Mistral Small", note: "Free tier · fast" },
+    { id: "open-mistral-7b",      label: "Mistral 7B",    note: "Free tier" },
+    { id: "open-mixtral-8x7b",    label: "Mixtral 8x7B",  note: "Free tier" },
   ],
   openrouter: [
-    { id: "mistralai/mistral-7b-instruct:free",       label: "Mistral 7B",    note: "Free" },
-    { id: "meta-llama/llama-3.2-3b-instruct:free",   label: "Llama 3.2 3B",  note: "Free" },
-    { id: "google/gemma-3-4b-it:free",               label: "Gemma 3 4B",    note: "Free" },
-    { id: "qwen/qwen3-8b:free",                      label: "Qwen3 8B",      note: "Free" },
+    { id: "deepseek/deepseek-r1:free",             label: "DeepSeek R1",   note: "Free · high quality" },
+    { id: "deepseek/deepseek-v3-base:free",        label: "DeepSeek V3",   note: "Free" },
+    { id: "mistralai/mistral-7b-instruct:free",    label: "Mistral 7B",    note: "Free" },
+    { id: "meta-llama/llama-3.2-3b-instruct:free", label: "Llama 3.2 3B", note: "Free" },
+    { id: "qwen/qwen3-8b:free",                    label: "Qwen3 8B",      note: "Free" },
+  ],
+  claude: [
+    { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5",  note: "Paid · fastest" },
+    { id: "claude-sonnet-4-6",          label: "Claude Sonnet 4.6", note: "Paid · recommended" },
   ],
 };
 
 const KEY_PLACEHOLDERS = {
   gemini:     "AIza...",
-  claude:     "sk-ant-...",
   groq:       "gsk_...",
+  cerebras:   "csk-...",
+  mistral:    "your_mistral_key...",
   openrouter: "sk-or-...",
+  claude:     "sk-ant-...",
 };
 
 const PROVIDER_DEFAULT_MODEL = {
-  gemini:     "gemini-2.5-flash",
+  gemini:     "gemini-2.0-flash-lite",
+  groq:       "llama-3.1-8b-instant",
+  cerebras:   "llama-3.1-8b",
+  mistral:    "mistral-small-latest",
+  openrouter: "deepseek/deepseek-r1:free",
   claude:     "claude-haiku-4-5-20251001",
-  groq:       "llama-3.3-70b-versatile",
-  openrouter: "mistralai/mistral-7b-instruct:free",
 };
 
 function newEntry(provider = "gemini") {

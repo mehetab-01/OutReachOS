@@ -9,7 +9,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from ai import draft_lead, AVAILABLE_MODELS, PROVIDERS
+from ai import draft_lead, build_lanes, ParallelDispatcher, AVAILABLE_MODELS, PROVIDERS
 from database import Base, engine, get_db
 from email_sender import SmtpConfig
 from email_sender import send_email
@@ -200,126 +200,184 @@ async def draft_single(
     return {"status": draft.status, "draft_id": draft.id, "model_used": draft.model_used}
 
 
-RATE_LIMIT_DELAY = 15   # seconds to wait after a 429 before retrying same lead
-BETWEEN_CALLS_DELAY = 2  # seconds between successful calls
-MAX_RATE_LIMIT_RETRIES = 4  # how many times to back off per lead before marking error
-
-# track running batch per campaign so we can stop it
-_running_batches: dict = {}
+# track running batch stop-events per campaign
+_running_batches: dict = {}   # campaign_id → asyncio.Event (set = stop requested)
 
 
 async def _draft_all_task(campaign_id: int, providers_config: Optional[list],
                           api_key: Optional[str], api_keys: list, model: Optional[str]):
     from database import SessionLocal
 
-    _running_batches[campaign_id] = True
+    stop_event = asyncio.Event()
+    _running_batches[campaign_id] = stop_event
+
+    # ── 1. Collect leads that need drafting ───────────────────────────────────
     db = SessionLocal()
     try:
         leads = db.query(Lead).filter(Lead.campaign_id == campaign_id).all()
-        pending_ids = [
-            lead.id for lead in leads
-            if (lead.draft is None or lead.draft.status in ("pending", "error"))
+        pending = [
+            (lead.id, _lead_to_dict(lead), _campaign_to_dict(lead.campaign))
+            for lead in leads
+            if lead.draft is None or lead.draft.status in ("pending", "error")
         ]
-
-        # Mark all as queued immediately so frontend shows them
-        db_q = SessionLocal()
-        try:
-            for lid in pending_ids:
-                lead = db_q.query(Lead).filter(Lead.id == lid).first()
-                if lead and lead.draft:
-                    lead.draft.status = "queued"
-                    lead.draft.error_msg = None
-                elif lead and not lead.draft:
-                    lead.draft = Draft(lead_id=lid, status="queued")
-                    db_q.add(lead.draft)
-            db_q.commit()
-        finally:
-            db_q.close()
-
-        queue = list(pending_ids)
-        rate_limit_hits: dict = {}  # lead_id → retry count
-
-        while queue and _running_batches.get(campaign_id):
-            lead_id = queue.pop(0)
-
-            db2 = SessionLocal()
-            try:
-                lead = db2.query(Lead).filter(Lead.id == lead_id).first()
-                if not lead:
-                    continue
-
-                draft = lead.draft
-                if not draft:
-                    draft = Draft(lead_id=lead.id, status="queued")
-                    db2.add(draft)
-                    db2.commit()
-                    db2.refresh(draft)
-
-                # already done by a single-draft click while batch was running
-                if draft.status in ("approved", "sent", "drafted"):
-                    continue
-
-                draft.status = "drafting"
-                draft.error_msg = None
-                db2.commit()
-
-                try:
-                    result = await draft_lead(
-                        _lead_to_dict(lead),
-                        _campaign_to_dict(lead.campaign),
-                        providers_config=providers_config,
-                        api_key=api_key,
-                        api_keys=api_keys,
-                        model=model,
-                    )
-                    draft.research = result["research"]
-                    draft.subject = result["subject"]
-                    draft.body = result["body"]
-                    draft.model_used = f"{result.get('provider_used','')}/{result.get('model_used','')}"
-                    draft.status = "drafted"
-                    db2.commit()
-                    rate_limit_hits.pop(lead_id, None)
-                    await asyncio.sleep(BETWEEN_CALLS_DELAY)
-
-                except Exception as e:
-                    err_str = str(e)
-                    is_rate_limit = (
-                        "429" in err_str
-                        or "RESOURCE_EXHAUSTED" in err_str
-                        or "quota" in err_str.lower()
-                        or "rate" in err_str.lower()
-                    )
-
-                    if is_rate_limit:
-                        retries = rate_limit_hits.get(lead_id, 0)
-                        if retries < MAX_RATE_LIMIT_RETRIES:
-                            # put back at end of queue and wait
-                            rate_limit_hits[lead_id] = retries + 1
-                            queue.append(lead_id)
-                            draft.status = "queued"
-                            draft.error_msg = None
-                            db2.commit()
-                            backoff = RATE_LIMIT_DELAY * (retries + 1)
-                            await asyncio.sleep(backoff)
-                        else:
-                            draft.status = "error"
-                            draft.error_msg = f"Rate limit hit {MAX_RATE_LIMIT_RETRIES}x — try adding more API keys in Configure. Original: {err_str[:200]}"
-                            db2.commit()
-                    else:
-                        draft.status = "error"
-                        draft.error_msg = err_str
-                        db2.commit()
-            finally:
-                db2.close()
-
     finally:
-        _running_batches.pop(campaign_id, None)
         db.close()
+
+    if not pending:
+        _running_batches.pop(campaign_id, None)
+        return
+
+    # ── 2. Mark all as queued immediately so UI updates ───────────────────────
+    db_q = SessionLocal()
+    try:
+        from ai import _build_prompt
+        for lead_id, _, _ in pending:
+            lead = db_q.query(Lead).filter(Lead.id == lead_id).first()
+            if not lead:
+                continue
+            if lead.draft:
+                lead.draft.status = "queued"
+                lead.draft.error_msg = None
+            else:
+                db_q.add(Draft(lead_id=lead_id, status="queued"))
+        db_q.commit()
+    finally:
+        db_q.close()
+
+    # ── 3. Build lanes (one per provider+model+key combo available) ───────────
+    lanes = build_lanes(providers_config, api_key, api_keys, model)
+    if not lanes:
+        db_err = SessionLocal()
+        try:
+            for lead_id, _, _ in pending:
+                lead = db_err.query(Lead).filter(Lead.id == lead_id).first()
+                if lead and lead.draft:
+                    lead.draft.status = "error"
+                    lead.draft.error_msg = "No AI provider configured."
+            db_err.commit()
+        finally:
+            db_err.close()
+        _running_batches.pop(campaign_id, None)
+        return
+
+    # ── 4. Callbacks written to DB ─────────────────────────────────────────────
+    async def on_result(lead_id: int, result: dict):
+        db2 = SessionLocal()
+        try:
+            lead = db2.query(Lead).filter(Lead.id == lead_id).first()
+            if not lead or not lead.draft:
+                return
+            if lead.draft.status in ("approved", "sent"):
+                return
+            lead.draft.research = result["research"]
+            lead.draft.subject = result["subject"]
+            lead.draft.body = result["body"]
+            lead.draft.model_used = f"{result.get('provider_used','')}/{result.get('model_used','')}"
+            lead.draft.status = "drafted"
+            lead.draft.error_msg = None
+            db2.commit()
+        finally:
+            db2.close()
+
+    async def on_error(lead_id: int, err_str: str, is_quota: bool):
+        db2 = SessionLocal()
+        try:
+            lead = db2.query(Lead).filter(Lead.id == lead_id).first()
+            if lead and lead.draft:
+                lead.draft.status = "error"
+                lead.draft.error_msg = err_str
+                db2.commit()
+        finally:
+            db2.close()
+
+    # ── 5. Mark each lead as "drafting" when dispatcher picks it up ───────────
+    # We patch on_result/on_error to also set status before calling AI.
+    # Instead, use a pre-dispatch hook via a wrapper queue watcher.
+    # Simpler: mark as "drafting" inside a thin wrapper around on_result.
+
+    async def mark_drafting(lead_id: int):
+        db2 = SessionLocal()
+        try:
+            lead = db2.query(Lead).filter(Lead.id == lead_id).first()
+            if lead and lead.draft and lead.draft.status not in ("approved", "sent", "drafted"):
+                lead.draft.status = "drafting"
+                lead.draft.error_msg = None
+                db2.commit()
+        finally:
+            db2.close()
+
+    # Wrap the dispatcher's worker to mark drafting before calling AI
+    original_worker = ParallelDispatcher._worker
+
+    async def _worker_with_drafting(self_lane, lane):
+        while not stop_event.is_set():
+            while not lane.is_available():
+                if stop_event.is_set():
+                    return
+                await asyncio.sleep(1)
+            try:
+                item = self_lane._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                await asyncio.sleep(0.1)
+                continue
+
+            lead_id, lead, campaign, prompt, retries = item
+            await mark_drafting(lead_id)
+
+            from ai import _CALLERS, _is_quota_error
+            try:
+                result = await lane.call(prompt)
+                result["model_used"] = lane.model_id
+                result["provider_used"] = lane.provider
+                await self_lane.on_result(lead_id, result)
+                self_lane._queue.task_done()
+            except Exception as e:
+                err_str = str(e)
+                is_quota = _is_quota_error(err_str)
+                if is_quota:
+                    is_rpd = any(k in err_str.lower() for k in ("rpd", "daily", "day limit", "exhausted"))
+                    if is_rpd:
+                        lane.exhausted = True
+                    else:
+                        lane.freeze(60)
+                    if retries < 3:
+                        self_lane._queue.put_nowait((lead_id, lead, campaign, prompt, retries + 1))
+                        self_lane._queue.task_done()
+                    else:
+                        await self_lane.on_error(lead_id, f"All lanes quota-exhausted: {err_str[:300]}", True)
+                        self_lane._queue.task_done()
+                else:
+                    if retries < 2:
+                        await asyncio.sleep(2)
+                        self_lane._queue.put_nowait((lead_id, lead, campaign, prompt, retries + 1))
+                        self_lane._queue.task_done()
+                    else:
+                        await self_lane.on_error(lead_id, err_str[:400], False)
+                        self_lane._queue.task_done()
+
+    # ── 6. Run dispatcher ─────────────────────────────────────────────────────
+    from ai import _build_prompt
+    dispatcher = ParallelDispatcher(lanes, on_result, on_error, stop_event)
+
+    # Override _worker with our drafting-aware version
+    ParallelDispatcher._worker = _worker_with_drafting
+
+    for lead_id, lead_dict, campaign_dict in pending:
+        prompt = _build_prompt(lead_dict, campaign_dict)
+        dispatcher.enqueue(lead_id, lead_dict, campaign_dict, prompt)
+
+    try:
+        await dispatcher.run()
+    finally:
+        ParallelDispatcher._worker = original_worker
+        _running_batches.pop(campaign_id, None)
 
 
 @app.post("/api/campaigns/{campaign_id}/draft-all/stop")
 def stop_draft_all(campaign_id: int):
-    _running_batches.pop(campaign_id, None)
+    event = _running_batches.get(campaign_id)
+    if event:
+        event.set()
     return {"message": "Batch stopped"}
 
 

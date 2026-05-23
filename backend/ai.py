@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import time
 from typing import Optional
 
 SYSTEM_PROMPT = (
@@ -15,37 +16,52 @@ PROVIDERS = {
     "gemini": {
         "label": "Google Gemini",
         "models": [
-            {"id": "gemini-2.5-flash",      "label": "Gemini 2.5 Flash",      "note": "Recommended · free tier"},
-            {"id": "gemini-2.0-flash",       "label": "Gemini 2.0 Flash",      "note": "200 req/day free"},
-            {"id": "gemini-2.0-flash-lite",  "label": "Gemini 2.0 Flash Lite", "note": "Cheapest"},
-            {"id": "gemini-2.5-pro",         "label": "Gemini 2.5 Pro",        "note": "Best quality"},
-            {"id": "gemini-flash-latest",    "label": "Gemini Flash Latest",   "note": "Always latest"},
-        ],
-    },
-    "claude": {
-        "label": "Anthropic Claude",
-        "models": [
-            {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5",  "note": "Fastest"},
-            {"id": "claude-sonnet-4-6",          "label": "Claude Sonnet 4.6", "note": "Recommended"},
-            {"id": "claude-opus-4-7",            "label": "Claude Opus 4.7",   "note": "Most capable"},
+            {"id": "gemini-2.0-flash-lite", "label": "Gemini 2.0 Flash Lite", "note": "1K/day · 15 RPM · fastest free"},
+            {"id": "gemini-2.5-flash",      "label": "Gemini 2.5 Flash",      "note": "250/day · 10 RPM · best quality"},
+            {"id": "gemini-2.0-flash",      "label": "Gemini 2.0 Flash",      "note": "100/day · 5 RPM"},
+            {"id": "gemini-flash-latest",   "label": "Gemini Flash Latest",   "note": "Always latest"},
         ],
     },
     "groq": {
         "label": "Groq (Ultra-fast)",
         "models": [
-            {"id": "llama-3.1-8b-instant",                    "label": "Llama 3.1 8B",         "note": "14.4K/day · Recommended"},
-            {"id": "meta-llama/llama-4-scout-17b-16e-instruct","label": "Llama 4 Scout 17B",    "note": "1K/day · high quality"},
-            {"id": "llama-3.3-70b-versatile",                  "label": "Llama 3.3 70B",        "note": "1K/day · best quality"},
-            {"id": "qwen/qwen3-32b",                           "label": "Qwen3 32B",            "note": "1K/day · 60 RPM"},
+            {"id": "llama-3.1-8b-instant",                     "label": "Llama 3.1 8B",      "note": "14.4K/day · 30 RPM · best quota"},
+            {"id": "meta-llama/llama-4-scout-17b-16e-instruct", "label": "Llama 4 Scout 17B", "note": "1K/day · 30 RPM · 30K TPM"},
+            {"id": "llama-3.3-70b-versatile",                  "label": "Llama 3.3 70B",     "note": "1K/day · best quality"},
+            {"id": "qwen/qwen3-32b",                           "label": "Qwen3 32B",         "note": "1K/day · 60 RPM"},
+        ],
+    },
+    "cerebras": {
+        "label": "Cerebras (Ultra-fast)",
+        "models": [
+            {"id": "llama-3.1-8b",  "label": "Llama 3.1 8B",  "note": "1M tok/day · 5 RPM · free"},
+            {"id": "llama-3.3-70b", "label": "Llama 3.3 70B", "note": "1M tok/day · 5 RPM · free"},
+            {"id": "llama-4-scout", "label": "Llama 4 Scout",  "note": "1M tok/day · 5 RPM · free"},
+        ],
+    },
+    "mistral": {
+        "label": "Mistral AI",
+        "models": [
+            {"id": "mistral-small-latest", "label": "Mistral Small", "note": "Free tier · fast"},
+            {"id": "open-mistral-7b",      "label": "Mistral 7B",    "note": "Free tier"},
+            {"id": "open-mixtral-8x7b",    "label": "Mixtral 8x7B",  "note": "Free tier"},
         ],
     },
     "openrouter": {
         "label": "OpenRouter (Free tier)",
         "models": [
+            {"id": "deepseek/deepseek-r1:free",              "label": "DeepSeek R1",  "note": "Free · high quality"},
+            {"id": "deepseek/deepseek-v3-base:free",         "label": "DeepSeek V3",  "note": "Free"},
             {"id": "mistralai/mistral-7b-instruct:free",     "label": "Mistral 7B",   "note": "Free"},
-            {"id": "meta-llama/llama-3.2-3b-instruct:free", "label": "Llama 3.2 3B", "note": "Free"},
-            {"id": "google/gemma-3-4b-it:free",             "label": "Gemma 3 4B",   "note": "Free"},
-            {"id": "qwen/qwen3-8b:free",                    "label": "Qwen3 8B",     "note": "Free"},
+            {"id": "meta-llama/llama-3.2-3b-instruct:free",  "label": "Llama 3.2 3B", "note": "Free"},
+            {"id": "qwen/qwen3-8b:free",                     "label": "Qwen3 8B",     "note": "Free"},
+        ],
+    },
+    "claude": {
+        "label": "Anthropic Claude",
+        "models": [
+            {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5",  "note": "Paid · fastest"},
+            {"id": "claude-sonnet-4-6",          "label": "Claude Sonnet 4.6", "note": "Paid · recommended"},
         ],
     },
 }
@@ -64,24 +80,52 @@ AVAILABLE_MODELS = [
 
 ENV_KEYS = {
     "gemini":     "GEMINI_API_KEY",
-    "claude":     "ANTHROPIC_API_KEY",
     "groq":       "GROQ_API_KEY",
+    "cerebras":   "CEREBRAS_API_KEY",
+    "mistral":    "MISTRAL_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
+    "claude":     "ANTHROPIC_API_KEY",
 }
 
-# Auto-fallback chain used when a specific provider hits quota/error.
-# Order: Gemini 2.5 Flash → Gemini 2.0 Flash → Gemini Flash Latest →
-#        Claude Haiku → Groq Llama → OpenRouter free models
+# ── Rate limit table (RPM per lane) ───────────────────────────────────────────
+# Used by the parallel dispatcher to know how fast each lane can go.
+# Conservative values to stay safely under limits.
+LANE_RPM = {
+    ("gemini",     "gemini-2.0-flash-lite"):                    12,  # limit 15, leave headroom
+    ("gemini",     "gemini-2.5-flash"):                          8,  # limit 10
+    ("gemini",     "gemini-2.0-flash"):                          4,  # limit 5
+    ("gemini",     "gemini-flash-latest"):                       8,
+    ("groq",       "llama-3.1-8b-instant"):                     25,  # limit 30
+    ("groq",       "meta-llama/llama-4-scout-17b-16e-instruct"): 25,
+    ("groq",       "llama-3.3-70b-versatile"):                  25,
+    ("groq",       "qwen/qwen3-32b"):                           50,  # limit 60
+    ("cerebras",   "llama-3.1-8b"):                              4,  # limit 5
+    ("cerebras",   "llama-3.3-70b"):                             4,
+    ("cerebras",   "llama-4-scout"):                             4,
+    ("mistral",    "mistral-small-latest"):                     15,
+    ("mistral",    "open-mistral-7b"):                          15,
+    ("mistral",    "open-mixtral-8x7b"):                        15,
+    ("openrouter", "deepseek/deepseek-r1:free"):                15,
+    ("openrouter", "deepseek/deepseek-v3-base:free"):           15,
+    ("openrouter", "mistralai/mistral-7b-instruct:free"):       15,
+    ("openrouter", "meta-llama/llama-3.2-3b-instruct:free"):   15,
+    ("openrouter", "qwen/qwen3-8b:free"):                      15,
+    ("claude",     "claude-haiku-4-5-20251001"):                40,
+    ("claude",     "claude-sonnet-4-6"):                        40,
+}
+
+# Fallback chain for single-lead drafting (sequential, no parallelism needed)
 AUTO_FALLBACK_CHAIN = [
+    ("gemini",     "gemini-2.0-flash-lite"),
     ("gemini",     "gemini-2.5-flash"),
-    ("gemini",     "gemini-2.0-flash"),
-    ("gemini",     "gemini-flash-latest"),
-    ("groq",       "llama-3.1-8b-instant"),                     # 14.4K RPD — best Groq quota
-    ("groq",       "meta-llama/llama-4-scout-17b-16e-instruct"), # 1K RPD · better quality
-    ("groq",       "llama-3.3-70b-versatile"),                  # 1K RPD · use last
+    ("groq",       "llama-3.1-8b-instant"),
+    ("groq",       "meta-llama/llama-4-scout-17b-16e-instruct"),
+    ("cerebras",   "llama-3.1-8b"),
+    ("mistral",    "mistral-small-latest"),
+    ("openrouter", "deepseek/deepseek-r1:free"),
     ("openrouter", "mistralai/mistral-7b-instruct:free"),
-    ("openrouter", "meta-llama/llama-3.2-3b-instruct:free"),
     ("openrouter", "qwen/qwen3-8b:free"),
+    ("groq",       "llama-3.3-70b-versatile"),
     ("claude",     "claude-haiku-4-5-20251001"),
 ]
 
@@ -89,13 +133,17 @@ AUTO_FALLBACK_CHAIN = [
 _GROQ_NAMESPACED = {"meta-llama/", "qwen/", "openai/"}
 
 def _detect_provider(model_id: str) -> str:
-    if model_id.startswith("gemini") or model_id.startswith("gemma"):
+    if model_id.startswith("gemini"):
         return "gemini"
     if model_id.startswith("claude"):
         return "claude"
+    if model_id.startswith("mistral") or model_id.startswith("open-"):
+        return "mistral"
+    if model_id.startswith("llama") or model_id.startswith("cerebras"):
+        # could be groq or cerebras — caller should know; default groq
+        return "groq"
     if "/" in model_id:
-        # Groq hosts some models under vendor namespaces
-        if any(model_id.startswith(prefix) for prefix in _GROQ_NAMESPACED):
+        if any(model_id.startswith(p) for p in _GROQ_NAMESPACED):
             return "groq"
         return "openrouter"
     return "groq"
@@ -166,23 +214,11 @@ async def _call_gemini(model_id: str, api_key: str, prompt: str) -> dict:
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
             temperature=0.7,
-            max_output_tokens=2048,
+            max_output_tokens=1024,
             response_mime_type="application/json",
         ),
     )
     return _parse_json(response.text)
-
-
-async def _call_claude(model_id: str, api_key: str, prompt: str) -> dict:
-    import anthropic
-    client = anthropic.AsyncAnthropic(api_key=api_key)
-    message = await client.messages.create(
-        model=model_id,
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return _parse_json(message.content[0].text)
 
 
 async def _call_groq(model_id: str, api_key: str, prompt: str) -> dict:
@@ -198,6 +234,46 @@ async def _call_groq(model_id: str, api_key: str, prompt: str) -> dict:
         max_tokens=1024,
     )
     return _parse_json(completion.choices[0].message.content)
+
+
+async def _call_cerebras(model_id: str, api_key: str, prompt: str) -> dict:
+    import httpx
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            "https://api.cerebras.ai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": model_id,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.7,
+                "max_tokens": 1024,
+            },
+        )
+        resp.raise_for_status()
+        return _parse_json(resp.json()["choices"][0]["message"]["content"])
+
+
+async def _call_mistral(model_id: str, api_key: str, prompt: str) -> dict:
+    import httpx
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            "https://api.mistral.ai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": model_id,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.7,
+                "max_tokens": 1024,
+            },
+        )
+        resp.raise_for_status()
+        return _parse_json(resp.json()["choices"][0]["message"]["content"])
 
 
 async def _call_openrouter(model_id: str, api_key: str, prompt: str) -> dict:
@@ -224,19 +300,158 @@ async def _call_openrouter(model_id: str, api_key: str, prompt: str) -> dict:
         return _parse_json(resp.json()["choices"][0]["message"]["content"])
 
 
+async def _call_claude(model_id: str, api_key: str, prompt: str) -> dict:
+    import anthropic
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+    message = await client.messages.create(
+        model=model_id,
+        max_tokens=1024,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return _parse_json(message.content[0].text)
+
+
 _CALLERS = {
     "gemini":     _call_gemini,
-    "claude":     _call_claude,
     "groq":       _call_groq,
+    "cerebras":   _call_cerebras,
+    "mistral":    _call_mistral,
     "openrouter": _call_openrouter,
+    "claude":     _call_claude,
 }
 
 
 def _is_quota_error(err: str) -> bool:
-    return any(k in err for k in ("429", "RESOURCE_EXHAUSTED", "quota", "rate limit", "RPD", "RPM"))
+    err = err.lower()
+    return any(k in err for k in ("429", "resource_exhausted", "quota", "rate limit", "rpd", "rpm", "too many"))
 
 
-# ── Main entry point ──────────────────────────────────────────────────────────
+# ── Token-bucket rate limiter ──────────────────────────────────────────────────
+
+class _TokenBucket:
+    """Allows at most `rpm` calls per 60 seconds, enforced via async sleep."""
+
+    def __init__(self, rpm: int):
+        self.interval = 60.0 / max(rpm, 1)  # seconds per token
+        self._next_allowed = 0.0
+        self._lock = asyncio.Lock()
+
+    async def acquire(self):
+        async with self._lock:
+            now = time.monotonic()
+            wait = self._next_allowed - now
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._next_allowed = max(self._next_allowed, time.monotonic()) + self.interval
+
+
+# ── Lane: one provider+model+key combination ──────────────────────────────────
+
+class _Lane:
+    def __init__(self, provider: str, model_id: str, key: str):
+        self.provider = provider
+        self.model_id = model_id
+        self.key = key
+        rpm = LANE_RPM.get((provider, model_id), 10)
+        self.bucket = _TokenBucket(rpm)
+        self.exhausted = False   # True when RPD quota is gone for the day
+        self.frozen_until = 0.0  # epoch time; lane is paused after a 429
+
+    def is_available(self) -> bool:
+        return not self.exhausted and time.monotonic() >= self.frozen_until
+
+    def freeze(self, seconds: float):
+        self.frozen_until = time.monotonic() + seconds
+
+    async def call(self, prompt: str) -> dict:
+        await self.bucket.acquire()
+        caller = _CALLERS[self.provider]
+        return await caller(self.model_id, self.key, prompt)
+
+
+# ── Parallel batch dispatcher ─────────────────────────────────────────────────
+
+class ParallelDispatcher:
+    """
+    Runs N lanes in parallel. Each lane respects its own RPM token bucket.
+    A shared asyncio.Queue feeds lead-ids to worker coroutines.
+    On 429 the lane freezes for 60s and the lead re-queues.
+    On RPD exhaustion the lane is retired.
+    """
+
+    def __init__(self, lanes: list[_Lane], on_result, on_error, stop_event: asyncio.Event):
+        self.lanes = [l for l in lanes if l.is_available()]
+        self.on_result = on_result  # async callback(lead_id, result)
+        self.on_error = on_error    # async callback(lead_id, err_str, is_quota)
+        self.stop_event = stop_event
+        self._queue: asyncio.Queue = asyncio.Queue()
+
+    def enqueue(self, lead_id: int, lead: dict, campaign: dict, prompt: str):
+        self._queue.put_nowait((lead_id, lead, campaign, prompt, 0))  # 0 = retry count
+
+    async def run(self):
+        if not self.lanes:
+            return
+        workers = [asyncio.create_task(self._worker(lane)) for lane in self.lanes]
+        await self._queue.join()
+        for w in workers:
+            w.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
+
+    async def _worker(self, lane: _Lane):
+        while not self.stop_event.is_set():
+            # Wait until this lane is available (unfrozen)
+            while not lane.is_available():
+                if self.stop_event.is_set():
+                    return
+                await asyncio.sleep(1)
+
+            try:
+                item = self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                await asyncio.sleep(0.1)
+                continue
+
+            lead_id, lead, campaign, prompt, retries = item
+
+            try:
+                result = await lane.call(prompt)
+                result["model_used"] = lane.model_id
+                result["provider_used"] = lane.provider
+                await self.on_result(lead_id, result)
+                self._queue.task_done()
+
+            except Exception as e:
+                err_str = str(e)
+                is_quota = _is_quota_error(err_str)
+
+                if is_quota:
+                    # Check if it's RPD exhaustion vs RPM throttle
+                    is_rpd = any(k in err_str.lower() for k in ("rpd", "daily", "day limit", "exhausted"))
+                    if is_rpd:
+                        lane.exhausted = True
+                    else:
+                        lane.freeze(60)  # RPM — thaw after 60s
+
+                    if retries < 3:
+                        # Re-queue the lead for another lane to pick up
+                        self._queue.put_nowait((lead_id, lead, campaign, prompt, retries + 1))
+                        self._queue.task_done()
+                    else:
+                        await self.on_error(lead_id, f"All lanes quota-exhausted: {err_str[:300]}", True)
+                        self._queue.task_done()
+                else:
+                    if retries < 2:
+                        await asyncio.sleep(2)
+                        self._queue.put_nowait((lead_id, lead, campaign, prompt, retries + 1))
+                        self._queue.task_done()
+                    else:
+                        await self.on_error(lead_id, err_str[:400], False)
+                        self._queue.task_done()
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
 
 async def draft_lead(
     lead: dict,
@@ -246,33 +461,21 @@ async def draft_lead(
     api_keys: Optional[list] = None,
     model: Optional[str] = None,
 ) -> dict:
-    """
-    Returns: {research, subject, body, model_used, provider_used}
-
-    Priority:
-    1. providers_config from frontend (user-configured priority list)
-    2. Legacy single-key / api_keys params
-    3. Auto-fallback: tries every provider+model that has an env key,
-       in AUTO_FALLBACK_CHAIN order
-    """
+    """Single-lead draft — sequential fallback, used by the single-draft button."""
     prompt = _build_prompt(lead, campaign)
-
-    # Build the full attempt list
     attempts = _build_attempt_list(providers_config, api_key, api_keys, model)
 
     if not attempts:
         raise ValueError(
             "No AI provider configured. Add at least one API key in Configure → AI Configuration, "
-            "or set GEMINI_API_KEY / ANTHROPIC_API_KEY / GROQ_API_KEY / OPENROUTER_API_KEY in backend/.env"
+            "or set GEMINI_API_KEY / GROQ_API_KEY / CEREBRAS_API_KEY / MISTRAL_API_KEY in backend/.env"
         )
 
     errors = []
-
     for provider, model_id, key in attempts:
         caller = _CALLERS.get(provider)
         if not caller:
             continue
-
         last_err = None
         for attempt in range(3):
             try:
@@ -282,18 +485,27 @@ async def draft_lead(
                 return result
             except Exception as e:
                 last_err = e
-                err_str = str(e)
-                # Quota/rate-limit: skip retries, move to next provider immediately
-                if _is_quota_error(err_str.lower()):
+                if _is_quota_error(str(e).lower()):
                     break
                 if attempt < 2:
                     await asyncio.sleep(2 ** attempt * 2)
-
         errors.append(f"{provider}/{model_id}: {last_err}")
 
-    raise RuntimeError(
-        "All providers exhausted. Errors: " + " | ".join(errors)
-    )
+    raise RuntimeError("All providers exhausted. Errors: " + " | ".join(errors))
+
+
+def build_lanes(providers_config: Optional[list], api_key: Optional[str],
+                api_keys: Optional[list], model: Optional[str]) -> list[_Lane]:
+    """Build lane list from user config + env keys. Called by the batch dispatcher."""
+    attempts = _build_attempt_list(providers_config, api_key, api_keys, model)
+    seen = set()
+    lanes = []
+    for provider, model_id, key in attempts:
+        sig = (provider, model_id, key)
+        if sig not in seen and provider in _CALLERS:
+            seen.add(sig)
+            lanes.append(_Lane(provider, model_id, key))
+    return lanes
 
 
 def _build_attempt_list(
@@ -302,21 +514,18 @@ def _build_attempt_list(
     api_keys: Optional[list],
     model: Optional[str],
 ) -> list:
-    """Returns list of (provider, model_id, key) tuples to try in order."""
     result = []
 
-    # 1. User-configured priority list from frontend
     if providers_config:
         for entry in providers_config:
             p = entry.get("provider", "gemini")
-            m = entry.get("model", "gemini-2.5-flash")
+            m = entry.get("model", "gemini-2.0-flash-lite")
             k = entry.get("key", "").strip() or _env_key(p)
             if k:
                 result.append((p, m, k))
 
-    # 2. Legacy single/multi key params
     if not result and (api_key or api_keys):
-        m = model or "gemini-2.5-flash"
+        m = model or "gemini-2.0-flash-lite"
         p = _detect_provider(m)
         keys = list(api_keys or [])
         if api_key and api_key not in keys:
@@ -325,22 +534,17 @@ def _build_attempt_list(
             if k and k.strip():
                 result.append((p, m, k.strip()))
 
-    # 3. Auto-fallback from env vars — append after user config so they're last resort
-    #    (or primary if nothing configured at all)
     env_fallbacks = []
     for p, m in AUTO_FALLBACK_CHAIN:
         k = _env_key(p)
         if k:
             entry = (p, m, k)
-            # Don't duplicate entries already in result
             if entry not in result:
                 env_fallbacks.append(entry)
 
     if not result:
-        # Nothing configured — use full fallback chain
         result = env_fallbacks
     else:
-        # User configured something — append env fallbacks at the end
         result.extend(env_fallbacks)
 
     return result
