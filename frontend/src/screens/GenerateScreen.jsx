@@ -97,7 +97,7 @@ export default function GenerateScreen() {
   };
 
   const handleDraftOne = async (leadId) => {
-    // Show drafting badge instantly — don't wait for the API
+    // Instant optimistic badge
     setLeads((prev) => prev.map((l) =>
       l.id === leadId
         ? { ...l, draft: { ...(l.draft || {}), status: "drafting", error_msg: null } }
@@ -105,11 +105,22 @@ export default function GenerateScreen() {
     ));
     setSingleDrafting((p) => ({ ...p, [leadId]: true }));
     try {
-      await draftSingle(leadId);    // blocks until AI is done (~5-15s)
-      await fetchLeads();           // one refresh to get final state
+      const res = await draftSingle(leadId);
+      // Update state directly from response — no extra round trip
+      setLeads((prev) => prev.map((l) =>
+        l.id === leadId
+          ? { ...l, draft: { ...(l.draft || {}), status: res.status, model_used: res.model_used, error_msg: null } }
+          : l
+      ));
+      // Background sync to pick up research/subject/body for the review panel
+      fetchLeads();
     } catch (err) {
+      setLeads((prev) => prev.map((l) =>
+        l.id === leadId
+          ? { ...l, draft: { ...(l.draft || {}), status: "error", error_msg: err.message } }
+          : l
+      ));
       toast({ title: "Draft failed", description: err.message, variant: "destructive" });
-      await fetchLeads();
     } finally {
       setSingleDrafting((p) => ({ ...p, [leadId]: false }));
     }
@@ -174,13 +185,12 @@ export default function GenerateScreen() {
           </div>
           <Progress value={(drafted / total) * 100} className="h-2 mb-4" />
 
-          {/* Status chips — shown during batch, single draft, or when errors exist */}
-          {(batchRunning || anySingleDrafting || errors > 0) && (
-            <div className="flex items-center gap-3 flex-wrap">
+          {/* Status chips — always visible so done count persists after batch ends */}
+          <div className="flex items-center gap-3 flex-wrap">
               {drafting > 0 && (
                 <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
                   <RefreshCw size={10} className="animate-spin" />
-                  {drafting} drafting now
+                  {drafting} drafting
                 </div>
               )}
               {queued > 0 && (
@@ -207,7 +217,6 @@ export default function GenerateScreen() {
                 </span>
               )}
             </div>
-          )}
         </div>
       )}
 
