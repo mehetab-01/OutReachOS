@@ -3,10 +3,21 @@ import json
 import os
 import re
 from typing import Optional
-import google.generativeai as genai
-
+from google import genai
+from google.genai import types
 
 SYSTEM_PROMPT = "You are a cold email copywriter for a premium web development studio. You write concise, personalized, non-generic cold emails that feel human."
+
+AVAILABLE_MODELS = [
+    {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash (Fastest)"},
+    {"id": "gemini-2.0-flash-lite", "label": "Gemini 2.0 Flash Lite (Cheapest)"},
+    {"id": "gemini-1.5-flash", "label": "Gemini 1.5 Flash"},
+    {"id": "gemini-1.5-flash-8b", "label": "Gemini 1.5 Flash 8B"},
+    {"id": "gemini-1.5-pro", "label": "Gemini 1.5 Pro (Best Quality)"},
+    {"id": "gemini-2.5-flash-preview-05-20", "label": "Gemini 2.5 Flash Preview"},
+]
+
+DEFAULT_MODEL = "gemini-2.0-flash"
 
 
 def _build_prompt(lead: dict, campaign: dict) -> str:
@@ -41,26 +52,53 @@ Respond ONLY in this exact JSON format with no markdown, no backticks, no extra 
 {{"research":"...","subject":"...","body":"..."}}"""
 
 
-async def draft_lead(lead: dict, campaign: dict, api_key: Optional[str] = None) -> dict:
-    key = api_key or os.getenv("GEMINI_API_KEY")
-    if not key:
-        raise ValueError("No Gemini API key available. Set GEMINI_API_KEY in .env or provide via X-Gemini-Key header.")
+def _pick_key(api_keys: Optional[list], env_key: Optional[str]) -> str:
+    """Round-robin through provided keys, fall back to env."""
+    keys = [k for k in (api_keys or []) if k and k.strip()]
+    if not keys and env_key:
+        keys = [env_key]
+    if not keys:
+        raise ValueError(
+            "No Gemini API key available. Set GEMINI_API_KEY in .env or provide via X-Gemini-Key header."
+        )
+    # use a module-level counter for simple rotation
+    idx = _pick_key._counter % len(keys)
+    _pick_key._counter += 1
+    return keys[idx].strip()
 
-    genai.configure(api_key=key)
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        system_instruction=SYSTEM_PROMPT,
-    )
+_pick_key._counter = 0
 
+
+async def draft_lead(
+    lead: dict,
+    campaign: dict,
+    api_key: Optional[str] = None,
+    api_keys: Optional[list] = None,
+    model: Optional[str] = None,
+) -> dict:
+    # api_key = single key (legacy header), api_keys = pool from new header
+    all_keys = list(api_keys or [])
+    if api_key and api_key not in all_keys:
+        all_keys.insert(0, api_key)
+
+    key = _pick_key(all_keys or None, os.getenv("GEMINI_API_KEY"))
+    chosen_model = model or DEFAULT_MODEL
+
+    client = genai.Client(api_key=key)
     prompt = _build_prompt(lead, campaign)
     last_error = None
 
     for attempt in range(3):
         try:
             response = await asyncio.to_thread(
-                model.generate_content,
-                prompt,
-                generation_config={"temperature": 0.7, "max_output_tokens": 1024},
+                client.models.generate_content,
+                model=chosen_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    temperature=0.7,
+                    max_output_tokens=1024,
+                ),
             )
             raw = response.text.strip()
             raw = re.sub(r"^```(?:json)?\s*", "", raw)

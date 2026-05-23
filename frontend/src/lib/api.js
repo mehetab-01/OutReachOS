@@ -5,8 +5,14 @@ const BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
 export const api = axios.create({ baseURL: BASE_URL });
 
 api.interceptors.request.use((config) => {
-  const key = sessionStorage.getItem("gemini_key");
-  if (key) config.headers["X-Gemini-Key"] = key;
+  const keys = JSON.parse(sessionStorage.getItem("gemini_keys") || "[]");
+  const model = sessionStorage.getItem("gemini_model") || "";
+  if (keys.length > 0) {
+    config.headers["X-Gemini-Keys"] = keys.join(",");
+    // legacy single-key header for backwards compat
+    config.headers["X-Gemini-Key"] = keys[0];
+  }
+  if (model) config.headers["X-Gemini-Model"] = model;
   return config;
 });
 
@@ -14,6 +20,9 @@ api.interceptors.request.use((config) => {
 export const createCampaign = (data) => api.post("/api/campaigns", data).then((r) => r.data);
 export const listCampaigns = () => api.get("/api/campaigns").then((r) => r.data);
 export const getCampaign = (id) => api.get(`/api/campaigns/${id}`).then((r) => r.data);
+
+// Models
+export const listModels = () => api.get("/api/models").then((r) => r.data);
 
 // Leads
 export const uploadLeads = (campaignId, leads) =>

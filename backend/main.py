@@ -8,7 +8,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from ai import draft_lead
+from ai import draft_lead, AVAILABLE_MODELS
 from database import Base, engine, get_db
 from email_sender import SmtpConfig
 from email_sender import send_email
@@ -28,6 +28,11 @@ load_dotenv()
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="OutreachOS API", version="1.0.0")
+
+
+@app.get("/api/models")
+def list_models():
+    return AVAILABLE_MODELS
 
 app.add_middleware(
     CORSMiddleware,
@@ -125,6 +130,8 @@ async def draft_single(
     lead_id: int,
     db: Session = Depends(get_db),
     x_gemini_key: Optional[str] = Header(default=None),
+    x_gemini_keys: Optional[str] = Header(default=None),
+    x_gemini_model: Optional[str] = Header(default=None),
 ):
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
@@ -140,8 +147,16 @@ async def draft_single(
     draft.status = "drafting"
     db.commit()
 
+    keys_pool = [k.strip() for k in x_gemini_keys.split(",")] if x_gemini_keys else []
+
     try:
-        result = await draft_lead(_lead_to_dict(lead), _campaign_to_dict(lead.campaign), api_key=x_gemini_key)
+        result = await draft_lead(
+            _lead_to_dict(lead),
+            _campaign_to_dict(lead.campaign),
+            api_key=x_gemini_key,
+            api_keys=keys_pool,
+            model=x_gemini_model,
+        )
         draft.research = result["research"]
         draft.subject = result["subject"]
         draft.body = result["body"]
@@ -155,7 +170,7 @@ async def draft_single(
     return {"status": draft.status, "draft_id": draft.id}
 
 
-async def _draft_all_task(campaign_id: int, api_key: Optional[str]):
+async def _draft_all_task(campaign_id: int, api_key: Optional[str], api_keys: list, model: Optional[str]):
     from database import SessionLocal
 
     db = SessionLocal()
@@ -176,7 +191,13 @@ async def _draft_all_task(campaign_id: int, api_key: Optional[str]):
             db.commit()
 
             try:
-                result = await draft_lead(_lead_to_dict(lead), _campaign_to_dict(lead.campaign), api_key=api_key)
+                result = await draft_lead(
+                    _lead_to_dict(lead),
+                    _campaign_to_dict(lead.campaign),
+                    api_key=api_key,
+                    api_keys=api_keys,
+                    model=model,
+                )
                 draft.research = result["research"]
                 draft.subject = result["subject"]
                 draft.body = result["body"]
@@ -197,11 +218,14 @@ async def draft_all(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     x_gemini_key: Optional[str] = Header(default=None),
+    x_gemini_keys: Optional[str] = Header(default=None),
+    x_gemini_model: Optional[str] = Header(default=None),
 ):
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    background_tasks.add_task(_draft_all_task, campaign_id, x_gemini_key)
+    keys_pool = [k.strip() for k in x_gemini_keys.split(",")] if x_gemini_keys else []
+    background_tasks.add_task(_draft_all_task, campaign_id, x_gemini_key, keys_pool, x_gemini_model)
     return {"message": "Batch draft started"}
 
 
