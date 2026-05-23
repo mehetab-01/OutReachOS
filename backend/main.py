@@ -1,4 +1,5 @@
 import asyncio
+import json as _json
 import os
 from datetime import datetime
 from typing import List, Optional
@@ -8,7 +9,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from ai import draft_lead, AVAILABLE_MODELS
+from ai import draft_lead, AVAILABLE_MODELS, PROVIDERS
 from database import Base, engine, get_db
 from email_sender import SmtpConfig
 from email_sender import send_email
@@ -29,11 +30,6 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="OutreachOS API", version="1.0.0")
 
-
-@app.get("/api/models")
-def list_models():
-    return AVAILABLE_MODELS
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -41,6 +37,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _parse_providers(header: Optional[str]) -> Optional[list]:
+    """Parse X-AI-Providers JSON header into providers_config list."""
+    if not header:
+        return None
+    try:
+        data = _json.loads(header)
+        if isinstance(data, list) and len(data) > 0:
+            return data
+    except Exception:
+        pass
+    return None
 
 
 def _campaign_to_dict(campaign: Campaign) -> dict:
@@ -66,7 +75,14 @@ def _lead_to_dict(lead: Lead) -> dict:
     }
 
 
-# ── Campaigns ──────────────────────────────────────────────────────────────
+# ── Models ─────────────────────────────────────────────────────────────────────
+
+@app.get("/api/models")
+def list_models():
+    return {"providers": PROVIDERS, "flat": AVAILABLE_MODELS}
+
+
+# ── Campaigns ──────────────────────────────────────────────────────────────────
 
 @app.post("/api/campaigns", response_model=CampaignOut)
 def create_campaign(body: CampaignCreate, db: Session = Depends(get_db)):
@@ -90,7 +106,7 @@ def get_campaign(campaign_id: int, db: Session = Depends(get_db)):
     return campaign
 
 
-# ── Leads ──────────────────────────────────────────────────────────────────
+# ── Leads ──────────────────────────────────────────────────────────────────────
 
 @app.post("/api/campaigns/{campaign_id}/leads", response_model=List[LeadOut])
 def upload_leads(campaign_id: int, leads: List[LeadIn], db: Session = Depends(get_db)):
@@ -123,12 +139,14 @@ def get_leads(campaign_id: int, db: Session = Depends(get_db)):
     )
 
 
-# ── Drafts ─────────────────────────────────────────────────────────────────
+# ── Drafts ─────────────────────────────────────────────────────────────────────
 
 @app.post("/api/leads/{lead_id}/draft")
 async def draft_single(
     lead_id: int,
     db: Session = Depends(get_db),
+    x_ai_providers: Optional[str] = Header(default=None),
+    # legacy headers kept for compatibility
     x_gemini_key: Optional[str] = Header(default=None),
     x_gemini_keys: Optional[str] = Header(default=None),
     x_gemini_model: Optional[str] = Header(default=None),
@@ -145,16 +163,19 @@ async def draft_single(
         db.refresh(draft)
 
     draft.status = "drafting"
+    draft.error_msg = None
     db.commit()
 
-    keys_pool = [k.strip() for k in x_gemini_keys.split(",")] if x_gemini_keys else []
+    providers_config = _parse_providers(x_ai_providers)
+    legacy_keys = [k.strip() for k in x_gemini_keys.split(",")] if x_gemini_keys else []
 
     try:
         result = await draft_lead(
             _lead_to_dict(lead),
             _campaign_to_dict(lead.campaign),
+            providers_config=providers_config,
             api_key=x_gemini_key,
-            api_keys=keys_pool,
+            api_keys=legacy_keys,
             model=x_gemini_model,
         )
         draft.research = result["research"]
@@ -170,7 +191,8 @@ async def draft_single(
     return {"status": draft.status, "draft_id": draft.id}
 
 
-async def _draft_all_task(campaign_id: int, api_key: Optional[str], api_keys: list, model: Optional[str]):
+async def _draft_all_task(campaign_id: int, providers_config: Optional[list],
+                          api_key: Optional[str], api_keys: list, model: Optional[str]):
     from database import SessionLocal
 
     db = SessionLocal()
@@ -188,12 +210,14 @@ async def _draft_all_task(campaign_id: int, api_key: Optional[str], api_keys: li
                 continue
 
             draft.status = "drafting"
+            draft.error_msg = None
             db.commit()
 
             try:
                 result = await draft_lead(
                     _lead_to_dict(lead),
                     _campaign_to_dict(lead.campaign),
+                    providers_config=providers_config,
                     api_key=api_key,
                     api_keys=api_keys,
                     model=model,
@@ -217,6 +241,7 @@ async def draft_all(
     campaign_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    x_ai_providers: Optional[str] = Header(default=None),
     x_gemini_key: Optional[str] = Header(default=None),
     x_gemini_keys: Optional[str] = Header(default=None),
     x_gemini_model: Optional[str] = Header(default=None),
@@ -224,8 +249,13 @@ async def draft_all(
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    keys_pool = [k.strip() for k in x_gemini_keys.split(",")] if x_gemini_keys else []
-    background_tasks.add_task(_draft_all_task, campaign_id, x_gemini_key, keys_pool, x_gemini_model)
+
+    providers_config = _parse_providers(x_ai_providers)
+    legacy_keys = [k.strip() for k in x_gemini_keys.split(",")] if x_gemini_keys else []
+
+    background_tasks.add_task(
+        _draft_all_task, campaign_id, providers_config, x_gemini_key, legacy_keys, x_gemini_model
+    )
     return {"message": "Batch draft started"}
 
 
@@ -247,7 +277,7 @@ def patch_draft(draft_id: int, body: DraftPatch, db: Session = Depends(get_db)):
     return draft
 
 
-# ── Send ───────────────────────────────────────────────────────────────────
+# ── Send ───────────────────────────────────────────────────────────────────────
 
 @app.post("/api/campaigns/{campaign_id}/send")
 async def send_campaign(

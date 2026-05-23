@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Building2, MessageSquare, Key, ChevronDown, ChevronUp,
-  ArrowRight, Plus, Trash2, CheckCircle, Cpu,
+  ArrowRight, Plus, Trash2, GripVertical, AlertCircle,
+  CheckCircle2, Zap,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -12,64 +13,130 @@ import { useToast } from "../components/ui/use-toast";
 
 const TONES = ["Professional", "Conversational", "Direct"];
 
-const DEFAULT_MODELS = [
-  { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash (Fastest)" },
-  { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite (Cheapest)" },
-  { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
-  { id: "gemini-1.5-flash-8b", label: "Gemini 1.5 Flash 8B" },
-  { id: "gemini-1.5-pro", label: "Gemini 1.5 Pro (Best Quality)" },
-  { id: "gemini-2.5-flash-preview-05-20", label: "Gemini 2.5 Flash Preview" },
-];
+const PROVIDER_META = {
+  gemini:      { label: "Google Gemini",        color: "bg-blue-50 text-blue-700 border-blue-200",   dot: "bg-blue-500" },
+  claude:      { label: "Anthropic Claude",      color: "bg-orange-50 text-orange-700 border-orange-200", dot: "bg-orange-500" },
+  groq:        { label: "Groq (Ultra-fast)",     color: "bg-green-50 text-green-700 border-green-200",  dot: "bg-green-500" },
+  openrouter:  { label: "OpenRouter (Free)",     color: "bg-purple-50 text-purple-700 border-purple-200", dot: "bg-purple-500" },
+};
+
+const DEFAULT_MODELS_BY_PROVIDER = {
+  gemini:     [
+    { id: "gemini-2.0-flash",               label: "Gemini 2.0 Flash",         note: "Fastest" },
+    { id: "gemini-2.0-flash-lite",          label: "Gemini 2.0 Flash Lite",    note: "Cheapest" },
+    { id: "gemini-2.5-flash-preview-05-20", label: "Gemini 2.5 Flash Preview", note: "Latest" },
+    { id: "gemini-1.5-flash",               label: "Gemini 1.5 Flash",         note: "" },
+    { id: "gemini-1.5-pro",                 label: "Gemini 1.5 Pro",           note: "Best quality" },
+  ],
+  claude: [
+    { id: "claude-haiku-4-5-20251001",      label: "Claude Haiku 4.5",  note: "Fastest" },
+    { id: "claude-sonnet-4-6",              label: "Claude Sonnet 4.6", note: "Recommended" },
+    { id: "claude-opus-4-7",               label: "Claude Opus 4.7",   note: "Most capable" },
+  ],
+  groq: [
+    { id: "llama-3.3-70b-versatile",        label: "Llama 3.3 70B",    note: "Best on Groq" },
+    { id: "llama-3.1-8b-instant",           label: "Llama 3.1 8B",     note: "Fastest" },
+    { id: "mixtral-8x7b-32768",             label: "Mixtral 8x7B",     note: "" },
+    { id: "gemma2-9b-it",                   label: "Gemma 2 9B",       note: "" },
+  ],
+  openrouter: [
+    { id: "mistralai/mistral-7b-instruct:free",       label: "Mistral 7B",    note: "Free" },
+    { id: "meta-llama/llama-3.2-3b-instruct:free",   label: "Llama 3.2 3B",  note: "Free" },
+    { id: "google/gemma-3-4b-it:free",               label: "Gemma 3 4B",    note: "Free" },
+    { id: "qwen/qwen3-8b:free",                      label: "Qwen3 8B",      note: "Free" },
+  ],
+};
+
+const KEY_PLACEHOLDERS = {
+  gemini:     "AIza...",
+  claude:     "sk-ant-...",
+  groq:       "gsk_...",
+  openrouter: "sk-or-...",
+};
+
+function newEntry(provider = "gemini") {
+  return {
+    id: Date.now() + Math.random(),
+    provider,
+    model: DEFAULT_MODELS_BY_PROVIDER[provider][0].id,
+    key: "",
+  };
+}
 
 export default function ConfigureScreen() {
   const { campaignForm, setCampaignForm, rawLeads, setCampaign, setLeads, setScreen } = useApp();
   const [showAiConfig, setShowAiConfig] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [models, setModels] = useState(DEFAULT_MODELS);
+  const [serverModels, setServerModels] = useState(null);
   const { toast } = useToast();
 
-  // Multi-key state — array of { id, value, label }
-  const [geminiKeys, setGeminiKeys] = useState(() => {
-    const saved = JSON.parse(sessionStorage.getItem("gemini_keys") || "[]");
-    return saved.length > 0
-      ? saved.map((k, i) => ({ id: i, value: k, label: `Key ${i + 1}` }))
-      : [{ id: 0, value: "", label: "Key 1" }];
+  // Priority-ordered provider entries
+  const [providers, setProviders] = useState(() => {
+    const saved = JSON.parse(sessionStorage.getItem("ai_providers") || "[]");
+    if (saved.length > 0) return saved.map((p) => ({ ...p, id: Date.now() + Math.random() }));
+    return [newEntry("gemini")];
   });
-  const [selectedModel, setSelectedModel] = useState(
-    sessionStorage.getItem("gemini_model") || "gemini-2.0-flash"
-  );
+
+  // Drag state
+  const dragIdx = useRef(null);
+  const [dragOver, setDragOver] = useState(null);
 
   useEffect(() => {
-    listModels().then(setModels).catch(() => {});
+    listModels()
+      .then((data) => setServerModels(data))
+      .catch(() => {});
   }, []);
 
   const update = (key, val) => setCampaignForm((p) => ({ ...p, [key]: val }));
 
-  const addKey = () => {
-    const nextId = Date.now();
-    setGeminiKeys((prev) => [
-      ...prev,
-      { id: nextId, value: "", label: `Key ${prev.length + 1}` },
-    ]);
-  };
+  const modelsFor = (provider) =>
+    serverModels?.providers?.[provider]?.models || DEFAULT_MODELS_BY_PROVIDER[provider] || [];
 
-  const removeKey = (id) => {
-    setGeminiKeys((prev) => {
-      const next = prev.filter((k) => k.id !== id).map((k, i) => ({ ...k, label: `Key ${i + 1}` }));
-      return next.length > 0 ? next : [{ id: Date.now(), value: "", label: "Key 1" }];
+  const updateEntry = (id, field, val) =>
+    setProviders((prev) =>
+      prev.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              [field]: val,
+              // auto-reset model when provider changes
+              ...(field === "provider"
+                ? { model: (DEFAULT_MODELS_BY_PROVIDER[val] || [])[0]?.id || "" }
+                : {}),
+            }
+          : p
+      )
+    );
+
+  const removeEntry = (id) =>
+    setProviders((prev) => {
+      const next = prev.filter((p) => p.id !== id);
+      return next.length > 0 ? next : [newEntry("gemini")];
     });
-  };
 
-  const updateKey = (id, value) => {
-    setGeminiKeys((prev) => prev.map((k) => (k.id === id ? { ...k, value } : k)));
+  // Drag-to-reorder
+  const onDragStart = (idx) => { dragIdx.current = idx; };
+  const onDragEnter = (idx) => setDragOver(idx);
+  const onDragEnd = () => {
+    if (dragIdx.current !== null && dragOver !== null && dragIdx.current !== dragOver) {
+      setProviders((prev) => {
+        const arr = [...prev];
+        const [item] = arr.splice(dragIdx.current, 1);
+        arr.splice(dragOver, 0, item);
+        return arr;
+      });
+    }
+    dragIdx.current = null;
+    setDragOver(null);
   };
 
   const handleSave = async () => {
     setLoading(true);
     try {
-      const validKeys = geminiKeys.map((k) => k.value.trim()).filter(Boolean);
-      sessionStorage.setItem("gemini_keys", JSON.stringify(validKeys));
-      sessionStorage.setItem("gemini_model", selectedModel);
+      const validProviders = providers.filter((p) => p.key.trim() || p.provider === "openrouter");
+      sessionStorage.setItem("ai_providers", JSON.stringify(
+        providers.map(({ id: _, ...rest }) => rest)
+      ));
 
       const camp = await createCampaign(campaignForm);
       setCampaign(camp);
@@ -107,7 +174,7 @@ export default function ConfigureScreen() {
     </div>
   );
 
-  const validKeyCount = geminiKeys.filter((k) => k.value.trim()).length;
+  const configuredCount = providers.filter((p) => p.key.trim()).length;
 
   return (
     <div className="animate-fade-in">
@@ -176,11 +243,16 @@ export default function ConfigureScreen() {
               onClick={() => setShowAiConfig((p) => !p)}
               className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-600 transition-colors w-full"
             >
-              <Key size={12} />
-              <span>AI Configuration</span>
-              {validKeyCount > 0 && (
+              <Zap size={12} />
+              <span className="font-medium">AI Providers & Priority</span>
+              {configuredCount > 0 && (
                 <span className="ml-1 px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-medium flex items-center gap-1">
-                  <CheckCircle size={9} /> {validKeyCount} key{validKeyCount > 1 ? "s" : ""}
+                  <CheckCircle2 size={9} /> {configuredCount} configured
+                </span>
+              )}
+              {configuredCount === 0 && (
+                <span className="ml-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium flex items-center gap-1">
+                  <AlertCircle size={9} /> no keys set
                 </span>
               )}
               <span className="ml-auto">
@@ -189,72 +261,111 @@ export default function ConfigureScreen() {
             </button>
 
             {showAiConfig && (
-              <div className="mt-4 space-y-4 animate-fade-in">
-                {/* Model selector */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-500 flex items-center gap-1.5">
-                    <Cpu size={11} /> Gemini Model
-                  </label>
-                  <div className="grid grid-cols-1 gap-1.5">
-                    {models.map((m) => (
-                      <button
-                        key={m.id}
-                        onClick={() => setSelectedModel(m.id)}
-                        className={`text-left px-3 py-2 rounded-lg text-xs border transition-all duration-150
-                          ${selectedModel === m.id
-                            ? "border-primary bg-primary-light text-primary font-medium"
-                            : "border-gray-200 text-gray-600 hover:border-gray-300"
-                          }`}
-                      >
-                        <span className="font-mono">{m.id}</span>
-                        <span className="ml-2 text-gray-400 font-normal">— {m.label.split("(")[1]?.replace(")", "") || ""}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+              <div className="mt-4 animate-fade-in space-y-3">
+                <p className="text-[11px] text-gray-400 leading-relaxed">
+                  Add providers in priority order — the first one with a valid key is used. If it fails after retries, the next kicks in.
+                  <span className="font-medium text-gray-500"> Drag</span> rows to reorder.
+                </p>
 
-                {/* Multi-key pool */}
+                {/* Priority list */}
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-gray-500 flex items-center gap-1.5">
-                      <Key size={11} /> API Keys
-                      <span className="text-gray-400 font-normal">(rotated round-robin)</span>
-                    </label>
-                    <button
-                      onClick={addKey}
-                      className="flex items-center gap-1 text-[10px] text-primary hover:text-primary-dark transition-colors font-medium"
-                    >
-                      <Plus size={10} /> Add Key
-                    </button>
-                  </div>
+                  {providers.map((entry, idx) => {
+                    const meta = PROVIDER_META[entry.provider] || PROVIDER_META.gemini;
+                    const models = modelsFor(entry.provider);
+                    const isDraggingOver = dragOver === idx;
 
-                  <div className="space-y-2">
-                    {geminiKeys.map((k) => (
-                      <div key={k.id} className="flex items-center gap-2">
-                        <span className="text-[10px] text-gray-400 w-10 shrink-0">{k.label}</span>
-                        <Input
-                          type="password"
-                          placeholder="AIza..."
-                          value={k.value}
-                          onChange={(e) => updateKey(k.id, e.target.value)}
-                          className="text-sm font-mono flex-1"
-                        />
-                        {geminiKeys.length > 1 && (
+                    return (
+                      <div
+                        key={entry.id}
+                        draggable
+                        onDragStart={() => onDragStart(idx)}
+                        onDragEnter={() => onDragEnter(idx)}
+                        onDragEnd={onDragEnd}
+                        onDragOver={(e) => e.preventDefault()}
+                        className={`border rounded-lg p-3 bg-white transition-all duration-150 ${
+                          isDraggingOver
+                            ? "border-primary shadow-md scale-[1.01]"
+                            : "border-gray-200"
+                        }`}
+                      >
+                        {/* Row header */}
+                        <div className="flex items-center gap-2 mb-2">
+                          <GripVertical
+                            size={14}
+                            className="text-gray-300 cursor-grab active:cursor-grabbing shrink-0"
+                          />
+                          <span className="text-[10px] font-bold text-gray-400 w-4 shrink-0">
+                            {idx + 1}
+                          </span>
+
+                          {/* Provider selector */}
+                          <select
+                            value={entry.provider}
+                            onChange={(e) => updateEntry(entry.id, "provider", e.target.value)}
+                            className={`text-xs font-medium border rounded-md px-2 py-1 ${meta.color} cursor-pointer focus:outline-none`}
+                          >
+                            {Object.entries(PROVIDER_META).map(([id, m]) => (
+                              <option key={id} value={id}>{m.label}</option>
+                            ))}
+                          </select>
+
+                          {/* Model selector */}
+                          <select
+                            value={entry.model}
+                            onChange={(e) => updateEntry(entry.id, "model", e.target.value)}
+                            className="flex-1 text-xs border border-gray-200 rounded-md px-2 py-1 text-gray-700 focus:outline-none focus:border-primary bg-white cursor-pointer"
+                          >
+                            {models.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.label}{m.note ? ` — ${m.note}` : ""}
+                              </option>
+                            ))}
+                          </select>
+
+                          {/* Remove */}
                           <button
-                            onClick={() => removeKey(k.id)}
+                            onClick={() => removeEntry(entry.id)}
                             className="text-gray-300 hover:text-red-400 transition-colors shrink-0"
                           >
                             <Trash2 size={13} />
                           </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                        </div>
 
-                  <p className="text-[10px] text-gray-400">
-                    Add multiple keys to distribute API calls across accounts. Keys override server .env for this session.
-                  </p>
+                        {/* API Key input */}
+                        <div className="flex items-center gap-2 pl-8">
+                          <Key size={11} className="text-gray-300 shrink-0" />
+                          <Input
+                            type="password"
+                            placeholder={KEY_PLACEHOLDERS[entry.provider] || "API Key..."}
+                            value={entry.key}
+                            onChange={(e) => updateEntry(entry.id, "key", e.target.value)}
+                            className="text-xs font-mono flex-1 h-7"
+                          />
+                          {entry.key.trim() && (
+                            <CheckCircle2 size={13} className="text-green-500 shrink-0" />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
+
+                {/* Add provider button */}
+                <div className="flex gap-2 flex-wrap pt-1">
+                  {Object.entries(PROVIDER_META).map(([id, m]) => (
+                    <button
+                      key={id}
+                      onClick={() => setProviders((prev) => [...prev, newEntry(id)])}
+                      className={`flex items-center gap-1 text-[10px] font-medium border rounded-md px-2 py-1 ${m.color} hover:opacity-80 transition-opacity`}
+                    >
+                      <Plus size={9} /> {m.label}
+                    </button>
+                  ))}
+                </div>
+
+                <p className="text-[10px] text-gray-400">
+                  Keys stored in sessionStorage only — never sent to our servers or logged.
+                </p>
               </div>
             )}
           </div>
@@ -276,9 +387,7 @@ export default function ConfigureScreen() {
           disabled={loading}
           className="bg-primary hover:bg-primary-dark gap-2"
         >
-          {loading ? "Saving…" : (
-            <>Save & Continue <ArrowRight size={14} /></>
-          )}
+          {loading ? "Saving…" : <><span>Save & Continue</span> <ArrowRight size={14} /></>}
         </Button>
       </div>
     </div>

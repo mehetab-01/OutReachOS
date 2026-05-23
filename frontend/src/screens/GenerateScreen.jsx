@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Wand2, ArrowRight, RefreshCw } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Progress } from "../components/ui/progress";
@@ -10,7 +10,8 @@ import { useToast } from "../components/ui/use-toast";
 
 export default function GenerateScreen() {
   const { campaign, leads, setLeads, setScreen } = useApp();
-  const [drafting, setDrafting] = useState(false);
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [drafting, setDrafting] = useState({}); // leadId → true when single-drafting
   const pollRef = useRef(null);
   const { toast } = useToast();
 
@@ -20,43 +21,57 @@ export default function GenerateScreen() {
   const total = leads.length;
   const anyDrafting = leads.some((l) => l.draft?.status === "drafting");
 
-  const poll = async () => {
+  const fetchLeads = useCallback(async () => {
     if (!campaign?.id) return;
     const updated = await getLeads(campaign.id);
     setLeads(updated);
-    const stillDrafting = updated.some((l) => l.draft?.status === "drafting");
-    if (!stillDrafting) {
-      clearInterval(pollRef.current);
-      setDrafting(false);
-    }
-  };
+    return updated;
+  }, [campaign?.id, setLeads]);
 
+  // Load fresh lead state on mount to clear stale error/drafting status
   useEffect(() => {
-    if (drafting || anyDrafting) {
+    fetchLeads();
+  }, [fetchLeads]);
+
+  // Poll while batch is running or any lead is in "drafting" status
+  useEffect(() => {
+    const shouldPoll = batchRunning || anyDrafting;
+    if (shouldPoll) {
       clearInterval(pollRef.current);
-      pollRef.current = setInterval(poll, 2000);
+      pollRef.current = setInterval(async () => {
+        const updated = await fetchLeads();
+        const stillDrafting = updated?.some((l) => l.draft?.status === "drafting");
+        if (!stillDrafting) {
+          clearInterval(pollRef.current);
+          setBatchRunning(false);
+        }
+      }, 2000);
+    } else {
+      clearInterval(pollRef.current);
     }
     return () => clearInterval(pollRef.current);
-  }, [drafting, anyDrafting, campaign?.id]);
+  }, [batchRunning, anyDrafting]); // eslint-disable-line
 
   const handleDraftAll = async () => {
     if (!campaign?.id) return;
-    setDrafting(true);
+    setBatchRunning(true);
     try {
       await draftAll(campaign.id);
     } catch (err) {
       toast({ title: "Draft failed", description: err.message, variant: "destructive" });
-      setDrafting(false);
+      setBatchRunning(false);
     }
   };
 
   const handleDraftOne = async (leadId) => {
-    if (!campaign?.id) return;
+    setDrafting((p) => ({ ...p, [leadId]: true }));
     try {
       await draftSingle(leadId);
-      await poll();
+      await fetchLeads();
     } catch (err) {
       toast({ title: "Draft failed", description: err.message, variant: "destructive" });
+    } finally {
+      setDrafting((p) => ({ ...p, [leadId]: false }));
     }
   };
 
@@ -66,7 +81,7 @@ export default function GenerateScreen() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">AI Draft Engine</h1>
           <p className="text-gray-500 mt-2 text-sm">
-            Gemini researches each business and writes a personalized email.
+            AI researches each business and writes a personalized email.
           </p>
         </div>
         <div className="flex gap-3">
@@ -78,9 +93,9 @@ export default function GenerateScreen() {
           <Button
             className="bg-primary hover:bg-primary-dark gap-2"
             onClick={handleDraftAll}
-            disabled={drafting || total === 0}
+            disabled={batchRunning || total === 0}
           >
-            {drafting ? (
+            {batchRunning ? (
               <><RefreshCw size={14} className="animate-spin" /> Drafting…</>
             ) : (
               <><Wand2 size={14} /> Draft All {total} Leads</>
@@ -119,6 +134,8 @@ export default function GenerateScreen() {
       <div className="space-y-2">
         {leads.map((lead) => {
           const status = lead.draft?.status || "pending";
+          const isSingleDrafting = drafting[lead.id] || status === "drafting";
+
           return (
             <div
               key={lead.id}
@@ -127,11 +144,17 @@ export default function GenerateScreen() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2.5 mb-0.5">
                   <span className="font-semibold text-sm text-gray-900">{lead.name}</span>
-                  <StatusBadge status={status} />
+                  <StatusBadge status={isSingleDrafting ? "drafting" : status} />
                 </div>
                 <span className="text-xs text-gray-400">
                   {categoryLabel(lead.category)} · {lead.city} · {lead.email}
                 </span>
+                {/* Error message */}
+                {status === "error" && lead.draft?.error_msg && (
+                  <p className="text-[10px] text-red-500 mt-1 truncate max-w-lg">
+                    {lead.draft.error_msg}
+                  </p>
+                )}
               </div>
 
               {/* Research preview */}
@@ -144,32 +167,30 @@ export default function GenerateScreen() {
               )}
 
               <div className="shrink-0">
-                {status === "drafting" && (
+                {isSingleDrafting && (
                   <RefreshCw size={15} className="text-amber-500 animate-spin" />
                 )}
-                {status === "pending" && (
+                {!isSingleDrafting && status === "pending" && (
                   <Button
                     variant="outline"
                     size="sm"
                     className="text-xs gap-1.5"
                     onClick={() => handleDraftOne(lead.id)}
-                    disabled={drafting}
                   >
                     <Wand2 size={12} /> Draft
                   </Button>
                 )}
-                {status === "error" && (
+                {!isSingleDrafting && status === "error" && (
                   <Button
                     variant="outline"
                     size="sm"
-                    className="text-xs text-red-600 border-red-200 gap-1.5"
+                    className="text-xs text-red-600 border-red-200 gap-1.5 hover:bg-red-50"
                     onClick={() => handleDraftOne(lead.id)}
-                    disabled={drafting}
                   >
                     <RefreshCw size={12} /> Retry
                   </Button>
                 )}
-                {["drafted", "approved"].includes(status) && (
+                {!isSingleDrafting && ["drafted", "approved"].includes(status) && (
                   <Button
                     variant="outline"
                     size="sm"

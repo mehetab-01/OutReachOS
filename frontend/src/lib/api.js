@@ -5,14 +5,14 @@ const BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
 export const api = axios.create({ baseURL: BASE_URL });
 
 api.interceptors.request.use((config) => {
-  const keys = JSON.parse(sessionStorage.getItem("gemini_keys") || "[]");
-  const model = sessionStorage.getItem("gemini_model") || "";
-  if (keys.length > 0) {
-    config.headers["X-Gemini-Keys"] = keys.join(",");
-    // legacy single-key header for backwards compat
-    config.headers["X-Gemini-Key"] = keys[0];
+  const providers = JSON.parse(sessionStorage.getItem("ai_providers") || "[]");
+  if (providers.length > 0) {
+    config.headers["X-AI-Providers"] = JSON.stringify(providers);
+    // legacy single-key compat
+    const first = providers[0];
+    if (first?.key) config.headers["X-Gemini-Key"] = first.key;
+    if (first?.model) config.headers["X-Gemini-Model"] = first.model;
   }
-  if (model) config.headers["X-Gemini-Model"] = model;
   return config;
 });
 
