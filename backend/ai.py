@@ -15,12 +15,11 @@ PROVIDERS = {
     "gemini": {
         "label": "Google Gemini",
         "models": [
-            {"id": "gemini-2.0-flash",                  "label": "Gemini 2.0 Flash",         "note": "Fastest"},
-            {"id": "gemini-2.0-flash-lite",              "label": "Gemini 2.0 Flash Lite",    "note": "Cheapest"},
-            {"id": "gemini-2.5-flash-preview-05-20",    "label": "Gemini 2.5 Flash Preview", "note": "Latest"},
-            {"id": "gemini-1.5-flash",                  "label": "Gemini 1.5 Flash",         "note": ""},
-            {"id": "gemini-1.5-flash-8b",               "label": "Gemini 1.5 Flash 8B",      "note": "Lightweight"},
-            {"id": "gemini-1.5-pro",                    "label": "Gemini 1.5 Pro",           "note": "Best quality"},
+            {"id": "gemini-2.5-flash",       "label": "Gemini 2.5 Flash",      "note": "Recommended · free tier"},
+            {"id": "gemini-2.0-flash",       "label": "Gemini 2.0 Flash",      "note": "Fast · 200 req/day free"},
+            {"id": "gemini-2.0-flash-lite",  "label": "Gemini 2.0 Flash Lite", "note": "Cheapest"},
+            {"id": "gemini-2.5-pro",         "label": "Gemini 2.5 Pro",        "note": "Best quality"},
+            {"id": "gemini-flash-latest",    "label": "Gemini Flash Latest",   "note": "Always latest flash"},
         ],
     },
     "claude": {
@@ -112,8 +111,14 @@ Respond ONLY in this exact JSON format with no markdown, no backticks, no extra 
 
 def _parse_json(raw: str) -> dict:
     raw = raw.strip()
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
+    # Strip markdown fences (single or multiline, with or without language tag)
+    raw = re.sub(r"^```(?:json)?\s*\n?", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\n?```\s*$", "", raw)
+    raw = raw.strip()
+    # If response contains a JSON object somewhere, extract it
+    match = re.search(r'\{.*\}', raw, re.DOTALL)
+    if match:
+        raw = match.group(0)
     parsed = json.loads(raw)
     if not all(k in parsed for k in ("research", "subject", "body")):
         raise ValueError(f"Missing keys in response: {list(parsed.keys())}")
@@ -134,7 +139,8 @@ async def _call_gemini(model_id: str, api_key: str, prompt: str) -> dict:
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
             temperature=0.7,
-            max_output_tokens=1024,
+            max_output_tokens=2048,
+            response_mime_type="application/json",
         ),
     )
     return _parse_json(response.text)
@@ -277,6 +283,10 @@ async def draft_lead(
                 return await call_fn(model_id, key, prompt)
             except Exception as e:
                 last_err = e
+                err_str = str(e)
+                # 429 quota exhausted — no point retrying, move to next provider
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+                    break
                 if attempt < 2:
                     await asyncio.sleep(2 ** attempt * 2)
 
@@ -303,7 +313,7 @@ def _build_legacy_config(
     model: Optional[str],
 ) -> list:
     """Convert old single-key / key-pool params into providers_config format."""
-    model_id = model or "gemini-2.0-flash"
+    model_id = model or "gemini-2.5-flash"
     provider = _detect_provider(model_id)
 
     keys = list(api_keys or [])

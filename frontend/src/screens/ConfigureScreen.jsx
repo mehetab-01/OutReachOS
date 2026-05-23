@@ -22,11 +22,11 @@ const PROVIDER_META = {
 
 const DEFAULT_MODELS_BY_PROVIDER = {
   gemini:     [
-    { id: "gemini-2.0-flash",               label: "Gemini 2.0 Flash",         note: "Fastest" },
-    { id: "gemini-2.0-flash-lite",          label: "Gemini 2.0 Flash Lite",    note: "Cheapest" },
-    { id: "gemini-2.5-flash-preview-05-20", label: "Gemini 2.5 Flash Preview", note: "Latest" },
-    { id: "gemini-1.5-flash",               label: "Gemini 1.5 Flash",         note: "" },
-    { id: "gemini-1.5-pro",                 label: "Gemini 1.5 Pro",           note: "Best quality" },
+    { id: "gemini-2.5-flash",      label: "Gemini 2.5 Flash",      note: "Recommended · free tier" },
+    { id: "gemini-2.0-flash",      label: "Gemini 2.0 Flash",      note: "200 req/day free" },
+    { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite", note: "Cheapest" },
+    { id: "gemini-2.5-pro",        label: "Gemini 2.5 Pro",        note: "Best quality" },
+    { id: "gemini-flash-latest",   label: "Gemini Flash Latest",   note: "Always latest" },
   ],
   claude: [
     { id: "claude-haiku-4-5-20251001",      label: "Claude Haiku 4.5",  note: "Fastest" },
@@ -54,11 +54,18 @@ const KEY_PLACEHOLDERS = {
   openrouter: "sk-or-...",
 };
 
+const PROVIDER_DEFAULT_MODEL = {
+  gemini:     "gemini-2.5-flash",
+  claude:     "claude-haiku-4-5-20251001",
+  groq:       "llama-3.3-70b-versatile",
+  openrouter: "mistralai/mistral-7b-instruct:free",
+};
+
 function newEntry(provider = "gemini") {
   return {
     id: Date.now() + Math.random(),
     provider,
-    model: DEFAULT_MODELS_BY_PROVIDER[provider][0].id,
+    model: PROVIDER_DEFAULT_MODEL[provider] || DEFAULT_MODELS_BY_PROVIDER[provider][0].id,
     key: "",
   };
 }
@@ -101,7 +108,7 @@ export default function ConfigureScreen() {
               [field]: val,
               // auto-reset model when provider changes
               ...(field === "provider"
-                ? { model: (DEFAULT_MODELS_BY_PROVIDER[val] || [])[0]?.id || "" }
+                ? { model: PROVIDER_DEFAULT_MODEL[val] || (DEFAULT_MODELS_BY_PROVIDER[val] || [])[0]?.id || "" }
                 : {}),
             }
           : p
