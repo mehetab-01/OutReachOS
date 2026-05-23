@@ -45,6 +45,7 @@ class DraftOut(BaseModel):
     subject: str
     body: str
     status: str
+    model_used: Optional[str]
     error_msg: Optional[str]
     sent_at: Optional[datetime]
     created_at: datetime

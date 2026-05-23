@@ -9,23 +9,23 @@ SYSTEM_PROMPT = (
     "You write concise, personalized, non-generic cold emails that feel human."
 )
 
-# ── Provider + model catalogue ────────────────────────────────────────────────
+# ── Provider + model catalogue ─────────────────────────────────────────────────
 
 PROVIDERS = {
     "gemini": {
         "label": "Google Gemini",
         "models": [
-            {"id": "gemini-2.5-flash",       "label": "Gemini 2.5 Flash",      "note": "Recommended · free tier"},
-            {"id": "gemini-2.0-flash",       "label": "Gemini 2.0 Flash",      "note": "Fast · 200 req/day free"},
+            {"id": "gemini-2.5-flash",      "label": "Gemini 2.5 Flash",      "note": "Recommended · free tier"},
+            {"id": "gemini-2.0-flash",       "label": "Gemini 2.0 Flash",      "note": "200 req/day free"},
             {"id": "gemini-2.0-flash-lite",  "label": "Gemini 2.0 Flash Lite", "note": "Cheapest"},
             {"id": "gemini-2.5-pro",         "label": "Gemini 2.5 Pro",        "note": "Best quality"},
-            {"id": "gemini-flash-latest",    "label": "Gemini Flash Latest",   "note": "Always latest flash"},
+            {"id": "gemini-flash-latest",    "label": "Gemini Flash Latest",   "note": "Always latest"},
         ],
     },
     "claude": {
         "label": "Anthropic Claude",
         "models": [
-            {"id": "claude-haiku-4-5-20251001",  "label": "Claude Haiku 4.5",  "note": "Fastest / cheapest"},
+            {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5",  "note": "Fastest"},
             {"id": "claude-sonnet-4-6",          "label": "Claude Sonnet 4.6", "note": "Recommended"},
             {"id": "claude-opus-4-7",            "label": "Claude Opus 4.7",   "note": "Most capable"},
         ],
@@ -33,40 +33,60 @@ PROVIDERS = {
     "groq": {
         "label": "Groq (Ultra-fast)",
         "models": [
-            {"id": "llama-3.3-70b-versatile",    "label": "Llama 3.3 70B",     "note": "Best on Groq"},
-            {"id": "llama-3.1-8b-instant",       "label": "Llama 3.1 8B",      "note": "Fastest"},
-            {"id": "mixtral-8x7b-32768",         "label": "Mixtral 8x7B",      "note": ""},
-            {"id": "gemma2-9b-it",               "label": "Gemma 2 9B",        "note": ""},
+            {"id": "llama-3.3-70b-versatile", "label": "Llama 3.3 70B", "note": "Best on Groq"},
+            {"id": "llama-3.1-8b-instant",    "label": "Llama 3.1 8B",  "note": "Fastest"},
+            {"id": "mixtral-8x7b-32768",      "label": "Mixtral 8x7B",  "note": ""},
+            {"id": "gemma2-9b-it",            "label": "Gemma 2 9B",    "note": ""},
         ],
     },
     "openrouter": {
         "label": "OpenRouter (Free tier)",
         "models": [
-            {"id": "mistralai/mistral-7b-instruct:free",         "label": "Mistral 7B",          "note": "Free"},
-            {"id": "meta-llama/llama-3.2-3b-instruct:free",     "label": "Llama 3.2 3B",        "note": "Free"},
-            {"id": "google/gemma-3-4b-it:free",                 "label": "Gemma 3 4B",          "note": "Free"},
-            {"id": "microsoft/phi-3-mini-128k-instruct:free",   "label": "Phi-3 Mini",          "note": "Free"},
-            {"id": "qwen/qwen3-8b:free",                        "label": "Qwen3 8B",            "note": "Free"},
+            {"id": "mistralai/mistral-7b-instruct:free",     "label": "Mistral 7B",   "note": "Free"},
+            {"id": "meta-llama/llama-3.2-3b-instruct:free", "label": "Llama 3.2 3B", "note": "Free"},
+            {"id": "google/gemma-3-4b-it:free",             "label": "Gemma 3 4B",   "note": "Free"},
+            {"id": "qwen/qwen3-8b:free",                    "label": "Qwen3 8B",     "note": "Free"},
         ],
     },
 }
 
-# Flat list for the /api/models endpoint
 AVAILABLE_MODELS = [
     {
-        "provider": provider_id,
+        "provider": pid,
         "provider_label": meta["label"],
         "id": m["id"],
         "label": m["label"],
         "note": m["note"],
     }
-    for provider_id, meta in PROVIDERS.items()
+    for pid, meta in PROVIDERS.items()
     for m in meta["models"]
+]
+
+ENV_KEYS = {
+    "gemini":     "GEMINI_API_KEY",
+    "claude":     "ANTHROPIC_API_KEY",
+    "groq":       "GROQ_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
+
+# Auto-fallback chain used when a specific provider hits quota/error.
+# Order: Gemini 2.5 Flash → Gemini 2.0 Flash → Gemini Flash Latest →
+#        Claude Haiku → Groq Llama → OpenRouter free models
+AUTO_FALLBACK_CHAIN = [
+    ("gemini",     "gemini-2.5-flash"),
+    ("gemini",     "gemini-2.0-flash"),
+    ("gemini",     "gemini-flash-latest"),
+    ("groq",       "llama-3.3-70b-versatile"),
+    ("groq",       "llama-3.1-8b-instant"),
+    ("openrouter", "mistralai/mistral-7b-instruct:free"),
+    ("openrouter", "meta-llama/llama-3.2-3b-instruct:free"),
+    ("openrouter", "qwen/qwen3-8b:free"),
+    ("claude",     "claude-haiku-4-5-20251001"),
 ]
 
 
 def _detect_provider(model_id: str) -> str:
-    if model_id.startswith("gemini"):
+    if model_id.startswith("gemini") or model_id.startswith("gemma"):
         return "gemini"
     if model_id.startswith("claude"):
         return "claude"
@@ -75,7 +95,11 @@ def _detect_provider(model_id: str) -> str:
     return "groq"
 
 
-# ── Prompt builder ─────────────────────────────────────────────────────────────
+def _env_key(provider: str) -> Optional[str]:
+    return os.getenv(ENV_KEYS.get(provider, "")) or None
+
+
+# ── Prompt ────────────────────────────────────────────────────────────────────
 
 def _build_prompt(lead: dict, campaign: dict) -> str:
     return f"""STUDIO: Arcen Studio — Mumbai, India
@@ -105,32 +129,29 @@ YOUR TASK:
    - Under 150 words total body
    - Must NOT sound like a mass email
 
-Respond ONLY in this exact JSON format with no markdown, no backticks, no extra text:
+Respond ONLY in this exact JSON format:
 {{"research":"...","subject":"...","body":"..."}}"""
 
 
 def _parse_json(raw: str) -> dict:
     raw = raw.strip()
-    # Strip markdown fences (single or multiline, with or without language tag)
     raw = re.sub(r"^```(?:json)?\s*\n?", "", raw, flags=re.IGNORECASE)
     raw = re.sub(r"\n?```\s*$", "", raw)
     raw = raw.strip()
-    # If response contains a JSON object somewhere, extract it
     match = re.search(r'\{.*\}', raw, re.DOTALL)
     if match:
         raw = match.group(0)
     parsed = json.loads(raw)
     if not all(k in parsed for k in ("research", "subject", "body")):
-        raise ValueError(f"Missing keys in response: {list(parsed.keys())}")
+        raise ValueError(f"Missing keys: {list(parsed.keys())}")
     return parsed
 
 
-# ── Provider call implementations ─────────────────────────────────────────────
+# ── Provider callers ──────────────────────────────────────────────────────────
 
 async def _call_gemini(model_id: str, api_key: str, prompt: str) -> dict:
     from google import genai
     from google.genai import types
-
     client = genai.Client(api_key=api_key)
     response = await asyncio.to_thread(
         client.models.generate_content,
@@ -148,7 +169,6 @@ async def _call_gemini(model_id: str, api_key: str, prompt: str) -> dict:
 
 async def _call_claude(model_id: str, api_key: str, prompt: str) -> dict:
     import anthropic
-
     client = anthropic.AsyncAnthropic(api_key=api_key)
     message = await client.messages.create(
         model=model_id,
@@ -161,7 +181,6 @@ async def _call_claude(model_id: str, api_key: str, prompt: str) -> dict:
 
 async def _call_groq(model_id: str, api_key: str, prompt: str) -> dict:
     from groq import AsyncGroq
-
     client = AsyncGroq(api_key=api_key)
     completion = await client.chat.completions.create(
         model=model_id,
@@ -177,7 +196,6 @@ async def _call_groq(model_id: str, api_key: str, prompt: str) -> dict:
 
 async def _call_openrouter(model_id: str, api_key: str, prompt: str) -> dict:
     import httpx
-
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             "https://openrouter.ai/api/v1/chat/completions",
@@ -197,95 +215,70 @@ async def _call_openrouter(model_id: str, api_key: str, prompt: str) -> dict:
             },
         )
         resp.raise_for_status()
-        data = resp.json()
-        return _parse_json(data["choices"][0]["message"]["content"])
+        return _parse_json(resp.json()["choices"][0]["message"]["content"])
 
 
-_PROVIDER_DISPATCH = {
-    "gemini": _call_gemini,
-    "claude": _call_claude,
-    "groq": _call_groq,
+_CALLERS = {
+    "gemini":     _call_gemini,
+    "claude":     _call_claude,
+    "groq":       _call_groq,
     "openrouter": _call_openrouter,
 }
 
 
-# ── Priority queue ─────────────────────────────────────────────────────────────
-# providers_config = list of {"provider": "gemini", "model": "gemini-2.0-flash", "key": "AIza..."}
-# ordered by priority (index 0 = highest). We rotate keys within same provider.
-
-_key_counters: dict = {}
+def _is_quota_error(err: str) -> bool:
+    return any(k in err for k in ("429", "RESOURCE_EXHAUSTED", "quota", "rate limit", "RPD", "RPM"))
 
 
-def _pick_entry(providers_config: list) -> Optional[dict]:
-    """Pick the next entry from priority list, round-robin within same provider+model."""
-    if not providers_config:
-        return None
-    # group consecutive same provider+model into one pool, pick round-robin
-    entry = providers_config[0]
-    pool_key = f"{entry['provider']}:{entry['model']}"
-    if pool_key not in _key_counters:
-        _key_counters[pool_key] = 0
-    idx = _key_counters[pool_key] % len(providers_config)
-    _key_counters[pool_key] += 1
-    return providers_config[idx]
-
-
-# ── Main entry point ───────────────────────────────────────────────────────────
+# ── Main entry point ──────────────────────────────────────────────────────────
 
 async def draft_lead(
     lead: dict,
     campaign: dict,
     providers_config: Optional[list] = None,
-    # legacy single-key support
     api_key: Optional[str] = None,
     api_keys: Optional[list] = None,
     model: Optional[str] = None,
 ) -> dict:
     """
-    providers_config: priority-ordered list of
-      {"provider": "gemini"|"claude"|"groq"|"openrouter",
-       "model": "<model_id>",
-       "key": "<api_key>"}
-    Falls back to legacy api_key/model for backwards compat.
-    Falls back to env vars if nothing provided.
-    """
-    # Build providers list from new config or fall back to legacy
-    if not providers_config:
-        providers_config = _build_legacy_config(api_key, api_keys, model)
+    Returns: {research, subject, body, model_used, provider_used}
 
-    if not providers_config:
+    Priority:
+    1. providers_config from frontend (user-configured priority list)
+    2. Legacy single-key / api_keys params
+    3. Auto-fallback: tries every provider+model that has an env key,
+       in AUTO_FALLBACK_CHAIN order
+    """
+    prompt = _build_prompt(lead, campaign)
+
+    # Build the full attempt list
+    attempts = _build_attempt_list(providers_config, api_key, api_keys, model)
+
+    if not attempts:
         raise ValueError(
-            "No AI provider configured. Add at least one API key in Configure → AI Configuration."
+            "No AI provider configured. Add at least one API key in Configure → AI Configuration, "
+            "or set GEMINI_API_KEY / ANTHROPIC_API_KEY / GROQ_API_KEY / OPENROUTER_API_KEY in backend/.env"
         )
 
-    prompt = _build_prompt(lead, campaign)
     errors = []
 
-    # Try each provider in priority order
-    for entry in providers_config:
-        provider = entry.get("provider", "gemini")
-        model_id = entry.get("model", "gemini-2.0-flash")
-        key = entry.get("key", "")
-
-        # Fall back to env vars if key blank
-        if not key:
-            key = _env_key_for(provider)
-        if not key:
-            continue
-
-        call_fn = _PROVIDER_DISPATCH.get(provider)
-        if not call_fn:
+    for provider, model_id, key in attempts:
+        caller = _CALLERS.get(provider)
+        if not caller:
             continue
 
         last_err = None
         for attempt in range(3):
             try:
-                return await call_fn(model_id, key, prompt)
+                result = await caller(model_id, key, prompt)
+                result["model_used"] = model_id
+                result["provider_used"] = provider
+                return result
             except Exception as e:
                 last_err = e
                 err_str = str(e)
-                # 429 quota exhausted — no point retrying, move to next provider
-                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+                # Quota/rate-limit: skip retries, move to next provider immediately
+                if _is_quota_error(err_str.lower()):
                     break
                 if attempt < 2:
                     await asyncio.sleep(2 ** attempt * 2)
@@ -293,36 +286,55 @@ async def draft_lead(
         errors.append(f"{provider}/{model_id}: {last_err}")
 
     raise RuntimeError(
-        f"All providers failed after retries. Errors: {'; '.join(str(e) for e in errors)}"
+        "All providers exhausted. Errors: " + " | ".join(errors)
     )
 
 
-def _env_key_for(provider: str) -> Optional[str]:
-    mapping = {
-        "gemini": "GEMINI_API_KEY",
-        "claude": "ANTHROPIC_API_KEY",
-        "groq": "GROQ_API_KEY",
-        "openrouter": "OPENROUTER_API_KEY",
-    }
-    return os.getenv(mapping.get(provider, ""))
-
-
-def _build_legacy_config(
+def _build_attempt_list(
+    providers_config: Optional[list],
     api_key: Optional[str],
     api_keys: Optional[list],
     model: Optional[str],
 ) -> list:
-    """Convert old single-key / key-pool params into providers_config format."""
-    model_id = model or "gemini-2.5-flash"
-    provider = _detect_provider(model_id)
+    """Returns list of (provider, model_id, key) tuples to try in order."""
+    result = []
 
-    keys = list(api_keys or [])
-    if api_key and api_key not in keys:
-        keys.insert(0, api_key)
+    # 1. User-configured priority list from frontend
+    if providers_config:
+        for entry in providers_config:
+            p = entry.get("provider", "gemini")
+            m = entry.get("model", "gemini-2.5-flash")
+            k = entry.get("key", "").strip() or _env_key(p)
+            if k:
+                result.append((p, m, k))
 
-    # Add env key as last resort
-    env_key = _env_key_for(provider)
-    if env_key and env_key not in keys:
-        keys.append(env_key)
+    # 2. Legacy single/multi key params
+    if not result and (api_key or api_keys):
+        m = model or "gemini-2.5-flash"
+        p = _detect_provider(m)
+        keys = list(api_keys or [])
+        if api_key and api_key not in keys:
+            keys.insert(0, api_key)
+        for k in keys:
+            if k and k.strip():
+                result.append((p, m, k.strip()))
 
-    return [{"provider": provider, "model": model_id, "key": k} for k in keys if k]
+    # 3. Auto-fallback from env vars — append after user config so they're last resort
+    #    (or primary if nothing configured at all)
+    env_fallbacks = []
+    for p, m in AUTO_FALLBACK_CHAIN:
+        k = _env_key(p)
+        if k:
+            entry = (p, m, k)
+            # Don't duplicate entries already in result
+            if entry not in result:
+                env_fallbacks.append(entry)
+
+    if not result:
+        # Nothing configured — use full fallback chain
+        result = env_fallbacks
+    else:
+        # User configured something — append env fallbacks at the end
+        result.extend(env_fallbacks)
+
+    return result

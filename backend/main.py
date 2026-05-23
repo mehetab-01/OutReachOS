@@ -28,6 +28,14 @@ load_dotenv()
 
 Base.metadata.create_all(bind=engine)
 
+# Add model_used column if it doesn't exist (safe migration)
+from sqlalchemy import text, inspect as sa_inspect
+with engine.connect() as conn:
+    cols = [c["name"] for c in sa_inspect(engine).get_columns("drafts")]
+    if "model_used" not in cols:
+        conn.execute(text("ALTER TABLE drafts ADD COLUMN model_used TEXT"))
+        conn.commit()
+
 app = FastAPI(title="OutreachOS API", version="1.0.0")
 
 app.add_middleware(
@@ -181,6 +189,7 @@ async def draft_single(
         draft.research = result["research"]
         draft.subject = result["subject"]
         draft.body = result["body"]
+        draft.model_used = f"{result.get('provider_used','')}/{result.get('model_used','')}"
         draft.status = "drafted"
     except Exception as e:
         draft.status = "error"
@@ -188,7 +197,7 @@ async def draft_single(
 
     db.commit()
     db.refresh(draft)
-    return {"status": draft.status, "draft_id": draft.id}
+    return {"status": draft.status, "draft_id": draft.id, "model_used": draft.model_used}
 
 
 RATE_LIMIT_DELAY = 15   # seconds to wait after a 429 before retrying same lead
@@ -266,6 +275,7 @@ async def _draft_all_task(campaign_id: int, providers_config: Optional[list],
                     draft.research = result["research"]
                     draft.subject = result["subject"]
                     draft.body = result["body"]
+                    draft.model_used = f"{result.get('provider_used','')}/{result.get('model_used','')}"
                     draft.status = "drafted"
                     db2.commit()
                     rate_limit_hits.pop(lead_id, None)

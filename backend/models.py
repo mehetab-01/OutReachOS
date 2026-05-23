@@ -46,6 +46,7 @@ class Draft(Base):
     subject = Column(String, default="")
     body = Column(Text, default="")
     status = Column(String, default="pending")
+    model_used = Column(String, nullable=True)
     error_msg = Column(Text, nullable=True)
     sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

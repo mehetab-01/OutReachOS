@@ -223,10 +223,17 @@ export default function GenerateScreen() {
                 )}
               </div>
 
-              {/* Research snippet once drafted */}
+              {/* Research snippet + model badge once drafted */}
               {lead.draft?.research && (
-                <div className="max-w-xs text-xs text-gray-500 italic border-l-2 border-primary-light pl-3 leading-relaxed hidden lg:block">
-                  {lead.draft.research.slice(0, 100)}{lead.draft.research.length > 100 ? "…" : ""}
+                <div className="max-w-xs hidden lg:block">
+                  <p className="text-xs text-gray-500 italic border-l-2 border-primary-light pl-3 leading-relaxed">
+                    {lead.draft.research.slice(0, 100)}{lead.draft.research.length > 100 ? "…" : ""}
+                  </p>
+                  {lead.draft?.model_used && (
+                    <span className="mt-1 inline-block text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono ml-3">
+                      {lead.draft.model_used}
+                    </span>
+                  )}
                 </div>
               )}
 

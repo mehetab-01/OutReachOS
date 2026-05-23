@@ -175,7 +175,12 @@ export default function ReviewScreen() {
                     {categoryLabel(activeLead.category)} · {activeLead.city} · {activeLead.email}
                   </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                  {activeDraft.model_used && (
+                    <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-mono">
+                      {activeDraft.model_used}
+                    </span>
+                  )}
                   <StatusBadge status={activeDraft.status} />
                   {!["approved", "sent"].includes(activeDraft.status) && (
                     <Button
