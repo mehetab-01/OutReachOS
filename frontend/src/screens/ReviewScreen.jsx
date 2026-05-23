@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { Check, X, ArrowRight, Wand2 } from "lucide-react";
+import { Check, X, ArrowRight, Wand2, RefreshCw } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import StatusBadge from "../components/StatusBadge";
 import { useApp } from "../context/AppContext";
-import { patchDraft, getLeads } from "../lib/api";
+import { patchDraft, getLeads, draftSingle } from "../lib/api";
 import { categoryLabel } from "../lib/utils";
 import { useToast } from "../components/ui/use-toast";
 
@@ -72,6 +72,22 @@ export default function ReviewScreen() {
   };
 
   const hasEdits = (leadId) => !!editedFields[leadId];
+
+  const [redrafting, setRedrafting] = useState(false);
+
+  const redraft = async (leadId) => {
+    setRedrafting(true);
+    try {
+      await draftSingle(leadId);
+      await refresh();
+      setEditedFields((p) => { const n = { ...p }; delete n[leadId]; return n; });
+      toast({ title: "Redrafted" });
+    } catch (err) {
+      toast({ title: "Redraft failed", description: err.message, variant: "destructive" });
+    } finally {
+      setRedrafting(false);
+    }
+  };
 
   return (
     <div className="animate-fade-in">
@@ -182,6 +198,18 @@ export default function ReviewScreen() {
                     </span>
                   )}
                   <StatusBadge status={activeDraft.status} />
+                  {activeDraft.status !== "sent" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-xs text-violet-700 border-violet-300 hover:bg-violet-50"
+                      onClick={() => redraft(activeLead.id)}
+                      disabled={redrafting}
+                    >
+                      <RefreshCw size={12} className={redrafting ? "animate-spin" : ""} />
+                      {redrafting ? "Redrafting…" : "Redraft"}
+                    </Button>
+                  )}
                   {!["approved", "sent"].includes(activeDraft.status) && (
                     <Button
                       size="sm"
