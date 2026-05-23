@@ -39,6 +39,9 @@ export default function GenerateScreen() {
     }
   }, [campaign?.id]);
 
+  // Track if a single draft is in-flight for the "queued/drafting" chip display
+  const anySingleDrafting = Object.values(singleDrafting).some(Boolean);
+
   // On mount: load leads and check if a batch is already running (e.g. page reload)
   useEffect(() => {
     fetchLeads().then(async () => {
@@ -94,32 +97,22 @@ export default function GenerateScreen() {
   };
 
   const handleDraftOne = async (leadId) => {
-    // Optimistically show drafting badge immediately
+    // Show drafting badge instantly — don't wait for the API
     setLeads((prev) => prev.map((l) =>
       l.id === leadId
         ? { ...l, draft: { ...(l.draft || {}), status: "drafting", error_msg: null } }
         : l
     ));
     setSingleDrafting((p) => ({ ...p, [leadId]: true }));
-
     try {
-      // Fire-and-forget — backend returns immediately after setting status="drafting"
-      await draftSingle(leadId);
+      await draftSingle(leadId);    // blocks until AI is done (~5-15s)
+      await fetchLeads();           // one refresh to get final state
     } catch (err) {
       toast({ title: "Draft failed", description: err.message, variant: "destructive" });
+      await fetchLeads();
+    } finally {
       setSingleDrafting((p) => ({ ...p, [leadId]: false }));
-      return;
     }
-
-    // Poll until this lead is no longer "drafting"
-    const pollId = setInterval(async () => {
-      const updated = await fetchLeads();
-      const lead = updated?.find((l) => l.id === leadId);
-      if (!lead || lead.draft?.status !== "drafting") {
-        clearInterval(pollId);
-        setSingleDrafting((p) => ({ ...p, [leadId]: false }));
-      }
-    }, 1500);
   };
 
   return (
@@ -181,8 +174,8 @@ export default function GenerateScreen() {
           </div>
           <Progress value={(drafted / total) * 100} className="h-2 mb-4" />
 
-          {/* Status chips — shown during batch AND whenever there are errors */}
-          {(batchRunning || errors > 0) && (
+          {/* Status chips — shown during batch, single draft, or when errors exist */}
+          {(batchRunning || anySingleDrafting || errors > 0) && (
             <div className="flex items-center gap-3 flex-wrap">
               {drafting > 0 && (
                 <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
