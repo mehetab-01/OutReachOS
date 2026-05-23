@@ -1,0 +1,25 @@
+# OutreachOS — Caddy reverse proxy config
+# Replace outreach.yourdomain.com with your actual domain
+# If using Cloudflare Tunnel, set this to your tunnel hostname
+
+outreach.yourdomain.com {
+    # API requests go to FastAPI backend
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Everything else goes to the React frontend
+    handle {
+        reverse_proxy frontend:80
+    }
+}
+
+# Uncomment for local development (no domain):
+# :80 {
+#     handle /api/* {
+#         reverse_proxy backend:8000
+#     }
+#     handle {
+#         reverse_proxy frontend:80
+#     }
+# }
