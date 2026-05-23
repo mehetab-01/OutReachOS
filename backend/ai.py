@@ -177,9 +177,9 @@ Write the email as 4 separate short paragraphs. Each paragraph is a separate JSO
 
 p1 (hook): One punchy sentence. A raw observation about {lead['name']}'s situation — no intro, no name, jump straight in. Example: "Most pet groomers in Coal City are booking online. {lead['name']} isn't."
 
-p2 (competitor gap): 1-2 sentences. Name what competitor {category} businesses in {lead['city']} are doing that {lead['name']} is missing — online bookings, Google Ads, AI chatbots answering enquiries 24/7.
+p2 (competitor gap): 1-2 sentences. Name what competitor {category} businesses in {lead['city']} are doing that {lead['name']} is missing — online bookings, Google Ads, AI-powered enquiry handling 24/7.
 
-p3 (what we do): 2 sentences max. Arcen Studio builds websites + AI automations (auto-reply bots, booking systems, lead capture) for local businesses. One-time build, no monthly retainer.
+p3 (what we do): 2 sentences max. Arcen Studio provides AI solutions and websites to empower local businesses — think auto-reply bots, online booking, lead capture. One-time build, no monthly retainer.
 
 p4 (CTA): One sentence. Invite them to a quick 5-min Zoom — only via replying to this email. Example: "If you're up for a quick 5-min Zoom to see if it's a fit, just reply here."
 
