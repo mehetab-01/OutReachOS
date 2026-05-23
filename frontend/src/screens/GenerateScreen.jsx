@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Wand2, ArrowRight, RefreshCw } from "lucide-react";
+import { Wand2, ArrowRight, RefreshCw, Square, Clock, AlertTriangle } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Progress } from "../components/ui/progress";
 import StatusBadge from "../components/StatusBadge";
 import { useApp } from "../context/AppContext";
-import { draftAll, draftSingle, getLeads } from "../lib/api";
+import { draftAll, draftSingle, getLeads, stopDraftAll, getDraftAllStatus } from "../lib/api";
 import { categoryLabel } from "../lib/utils";
 import { useToast } from "../components/ui/use-toast";
 
 export default function GenerateScreen() {
   const { campaign, leads, setLeads, setScreen } = useApp();
   const [batchRunning, setBatchRunning] = useState(false);
-  const [drafting, setDrafting] = useState({}); // leadId → true when single-drafting
+  const [batchStatus, setBatchStatus] = useState(null); // {running, total, done, counts}
+  const [singleDrafting, setSingleDrafting] = useState({}); // leadId → true
+  const [stopping, setStopping] = useState(false);
   const pollRef = useRef(null);
   const { toast } = useToast();
 
@@ -22,28 +24,36 @@ export default function GenerateScreen() {
   const anyDrafting = leads.some((l) => l.draft?.status === "drafting");
 
   const fetchLeads = useCallback(async () => {
-    if (!campaign?.id) return;
+    if (!campaign?.id) return [];
     const updated = await getLeads(campaign.id);
     setLeads(updated);
     return updated;
   }, [campaign?.id, setLeads]);
 
-  // Load fresh lead state on mount to clear stale error/drafting status
+  const fetchStatus = useCallback(async () => {
+    if (!campaign?.id) return null;
+    const s = await getDraftAllStatus(campaign.id);
+    setBatchStatus(s);
+    return s;
+  }, [campaign?.id]);
+
+  // Load fresh state on mount
   useEffect(() => {
     fetchLeads();
-  }, [fetchLeads]);
+    fetchStatus();
+  }, [fetchLeads, fetchStatus]);
 
-  // Poll while batch is running or any lead is in "drafting" status
+  // Poll while batch is running
   useEffect(() => {
     const shouldPoll = batchRunning || anyDrafting;
     if (shouldPoll) {
       clearInterval(pollRef.current);
       pollRef.current = setInterval(async () => {
-        const updated = await fetchLeads();
-        const stillDrafting = updated?.some((l) => l.draft?.status === "drafting");
-        if (!stillDrafting) {
+        const [, status] = await Promise.all([fetchLeads(), fetchStatus()]);
+        if (!status?.running && !anyDrafting) {
           clearInterval(pollRef.current);
           setBatchRunning(false);
+          setStopping(false);
         }
       }, 2000);
     } else {
@@ -55,25 +65,45 @@ export default function GenerateScreen() {
   const handleDraftAll = async () => {
     if (!campaign?.id) return;
     setBatchRunning(true);
+    setStopping(false);
     try {
       await draftAll(campaign.id);
+      await fetchStatus();
     } catch (err) {
-      toast({ title: "Draft failed", description: err.message, variant: "destructive" });
+      toast({ title: "Failed to start batch", description: err.message, variant: "destructive" });
       setBatchRunning(false);
     }
   };
 
+  const handleStop = async () => {
+    setStopping(true);
+    try {
+      await stopDraftAll(campaign.id);
+      await fetchLeads();
+      await fetchStatus();
+      setBatchRunning(false);
+    } catch (err) {
+      toast({ title: "Stop failed", description: err.message, variant: "destructive" });
+    } finally {
+      setStopping(false);
+    }
+  };
+
   const handleDraftOne = async (leadId) => {
-    setDrafting((p) => ({ ...p, [leadId]: true }));
+    setSingleDrafting((p) => ({ ...p, [leadId]: true }));
     try {
       await draftSingle(leadId);
       await fetchLeads();
     } catch (err) {
       toast({ title: "Draft failed", description: err.message, variant: "destructive" });
     } finally {
-      setDrafting((p) => ({ ...p, [leadId]: false }));
+      setSingleDrafting((p) => ({ ...p, [leadId]: false }));
     }
   };
+
+  const pendingCount = batchStatus?.counts?.pending ?? leads.filter((l) => !l.draft || l.draft.status === "pending").length;
+  const errorCount = batchStatus?.counts?.error ?? leads.filter((l) => l.draft?.status === "error").length;
+  const isRunning = batchRunning || batchStatus?.running;
 
   return (
     <div className="animate-fade-in">
@@ -90,24 +120,33 @@ export default function GenerateScreen() {
               View {drafted} Drafts <ArrowRight size={14} />
             </Button>
           )}
-          <Button
-            className="bg-primary hover:bg-primary-dark gap-2"
-            onClick={handleDraftAll}
-            disabled={batchRunning || total === 0}
-          >
-            {batchRunning ? (
-              <><RefreshCw size={14} className="animate-spin" /> Drafting…</>
-            ) : (
-              <><Wand2 size={14} /> Draft All {total} Leads</>
-            )}
-          </Button>
+          {isRunning ? (
+            <Button
+              className="bg-red-500 hover:bg-red-600 gap-2 text-white"
+              onClick={handleStop}
+              disabled={stopping}
+            >
+              {stopping
+                ? <><RefreshCw size={14} className="animate-spin" /> Stopping…</>
+                : <><Square size={14} /> Stop Queue</>
+              }
+            </Button>
+          ) : (
+            <Button
+              className="bg-primary hover:bg-primary-dark gap-2"
+              onClick={handleDraftAll}
+              disabled={total === 0}
+            >
+              <Wand2 size={14} /> Draft All {total} Leads
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Progress bar */}
+      {/* Progress + queue status */}
       {total > 0 && (
-        <div className="mb-6 bg-white border border-gray-200 rounded-xl p-4">
-          <div className="flex justify-between items-center mb-2">
+        <div className="mb-6 bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+          <div className="flex justify-between items-center">
             <span className="text-sm font-medium text-gray-700">
               {drafted} of {total} drafted
             </span>
@@ -116,6 +155,41 @@ export default function GenerateScreen() {
             </span>
           </div>
           <Progress value={(drafted / total) * 100} className="h-2" />
+
+          {/* Queue stats when running */}
+          {isRunning && (
+            <div className="flex items-center gap-4 pt-1">
+              <div className="flex items-center gap-1.5 text-xs text-amber-600">
+                <RefreshCw size={11} className="animate-spin" />
+                <span className="font-medium">{batchStatus?.counts?.drafting ?? 1} drafting</span>
+              </div>
+              {pendingCount > 0 && (
+                <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                  <Clock size={11} />
+                  <span>{pendingCount} in queue</span>
+                </div>
+              )}
+              {errorCount > 0 && (
+                <div className="flex items-center gap-1.5 text-xs text-red-500">
+                  <AlertTriangle size={11} />
+                  <span>{errorCount} failed</span>
+                </div>
+              )}
+              <span className="text-[10px] text-gray-400 ml-auto">
+                2s between calls · auto-backoff on rate limits
+              </span>
+            </div>
+          )}
+
+          {/* Rate limit warning when not running but errors exist */}
+          {!isRunning && errorCount > 0 && (
+            <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+              <AlertTriangle size={12} />
+              <span>
+                {errorCount} lead{errorCount > 1 ? "s" : ""} failed. Click Retry on each, or add more API keys in Configure for higher quota.
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -132,9 +206,14 @@ export default function GenerateScreen() {
 
       {/* Lead list */}
       <div className="space-y-2">
-        {leads.map((lead) => {
+        {leads.map((lead, idx) => {
           const status = lead.draft?.status || "pending";
-          const isSingleDrafting = drafting[lead.id] || status === "drafting";
+          const isSingleDrafting = singleDrafting[lead.id] || status === "drafting";
+
+          // Queue position: count pending leads before this one
+          const queuePos = isRunning && status === "pending"
+            ? leads.slice(0, idx).filter((l) => !l.draft || l.draft.status === "pending").length + 1
+            : null;
 
           return (
             <div
@@ -145,13 +224,17 @@ export default function GenerateScreen() {
                 <div className="flex items-center gap-2.5 mb-0.5">
                   <span className="font-semibold text-sm text-gray-900">{lead.name}</span>
                   <StatusBadge status={isSingleDrafting ? "drafting" : status} />
+                  {queuePos && (
+                    <span className="text-[10px] text-gray-400 font-medium">
+                      #{queuePos} in queue
+                    </span>
+                  )}
                 </div>
                 <span className="text-xs text-gray-400">
                   {categoryLabel(lead.category)} · {lead.city} · {lead.email}
                 </span>
-                {/* Error message */}
                 {status === "error" && lead.draft?.error_msg && (
-                  <p className="text-[10px] text-red-500 mt-1 truncate max-w-lg">
+                  <p className="text-[10px] text-red-500 mt-1 line-clamp-1 max-w-lg">
                     {lead.draft.error_msg}
                   </p>
                 )}
@@ -176,6 +259,7 @@ export default function GenerateScreen() {
                     size="sm"
                     className="text-xs gap-1.5"
                     onClick={() => handleDraftOne(lead.id)}
+                    disabled={isRunning}
                   >
                     <Wand2 size={12} /> Draft
                   </Button>
@@ -186,6 +270,7 @@ export default function GenerateScreen() {
                     size="sm"
                     className="text-xs text-red-600 border-red-200 gap-1.5 hover:bg-red-50"
                     onClick={() => handleDraftOne(lead.id)}
+                    disabled={isRunning}
                   >
                     <RefreshCw size={12} /> Retry
                   </Button>

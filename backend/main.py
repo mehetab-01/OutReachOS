@@ -191,49 +191,127 @@ async def draft_single(
     return {"status": draft.status, "draft_id": draft.id}
 
 
+RATE_LIMIT_DELAY = 15   # seconds to wait after a 429 before retrying same lead
+BETWEEN_CALLS_DELAY = 2  # seconds between successful calls
+MAX_RATE_LIMIT_RETRIES = 4  # how many times to back off per lead before marking error
+
+# track running batch per campaign so we can stop it
+_running_batches: dict = {}
+
+
 async def _draft_all_task(campaign_id: int, providers_config: Optional[list],
                           api_key: Optional[str], api_keys: list, model: Optional[str]):
     from database import SessionLocal
 
+    _running_batches[campaign_id] = True
     db = SessionLocal()
     try:
         leads = db.query(Lead).filter(Lead.campaign_id == campaign_id).all()
-        for lead in leads:
-            draft = lead.draft
-            if not draft:
-                draft = Draft(lead_id=lead.id, status="pending")
-                db.add(draft)
-                db.commit()
-                db.refresh(draft)
+        pending_ids = [
+            lead.id for lead in leads
+            if (lead.draft is None or lead.draft.status not in ("approved", "sent", "drafted"))
+        ]
 
-            if draft.status in ("approved", "sent", "drafting"):
-                continue
+        queue = list(pending_ids)
+        rate_limit_hits: dict = {}  # lead_id → retry count
 
-            draft.status = "drafting"
-            draft.error_msg = None
-            db.commit()
+        while queue and _running_batches.get(campaign_id):
+            lead_id = queue.pop(0)
 
+            db2 = SessionLocal()
             try:
-                result = await draft_lead(
-                    _lead_to_dict(lead),
-                    _campaign_to_dict(lead.campaign),
-                    providers_config=providers_config,
-                    api_key=api_key,
-                    api_keys=api_keys,
-                    model=model,
-                )
-                draft.research = result["research"]
-                draft.subject = result["subject"]
-                draft.body = result["body"]
-                draft.status = "drafted"
-            except Exception as e:
-                draft.status = "error"
-                draft.error_msg = str(e)
+                lead = db2.query(Lead).filter(Lead.id == lead_id).first()
+                if not lead:
+                    continue
 
-            db.commit()
-            await asyncio.sleep(1.2)
+                draft = lead.draft
+                if not draft:
+                    draft = Draft(lead_id=lead.id, status="pending")
+                    db2.add(draft)
+                    db2.commit()
+                    db2.refresh(draft)
+
+                # already done by a single-draft click
+                if draft.status in ("approved", "sent", "drafted"):
+                    continue
+
+                draft.status = "drafting"
+                draft.error_msg = None
+                db2.commit()
+
+                try:
+                    result = await draft_lead(
+                        _lead_to_dict(lead),
+                        _campaign_to_dict(lead.campaign),
+                        providers_config=providers_config,
+                        api_key=api_key,
+                        api_keys=api_keys,
+                        model=model,
+                    )
+                    draft.research = result["research"]
+                    draft.subject = result["subject"]
+                    draft.body = result["body"]
+                    draft.status = "drafted"
+                    db2.commit()
+                    rate_limit_hits.pop(lead_id, None)
+                    await asyncio.sleep(BETWEEN_CALLS_DELAY)
+
+                except Exception as e:
+                    err_str = str(e)
+                    is_rate_limit = (
+                        "429" in err_str
+                        or "RESOURCE_EXHAUSTED" in err_str
+                        or "quota" in err_str.lower()
+                        or "rate" in err_str.lower()
+                    )
+
+                    if is_rate_limit:
+                        retries = rate_limit_hits.get(lead_id, 0)
+                        if retries < MAX_RATE_LIMIT_RETRIES:
+                            # put back at front of queue and wait
+                            rate_limit_hits[lead_id] = retries + 1
+                            queue.insert(0, lead_id)
+                            draft.status = "pending"
+                            draft.error_msg = None
+                            db2.commit()
+                            backoff = RATE_LIMIT_DELAY * (retries + 1)
+                            await asyncio.sleep(backoff)
+                        else:
+                            draft.status = "error"
+                            draft.error_msg = f"Rate limit hit {MAX_RATE_LIMIT_RETRIES}x — try adding more API keys in Configure. Original: {err_str[:200]}"
+                            db2.commit()
+                    else:
+                        draft.status = "error"
+                        draft.error_msg = err_str
+                        db2.commit()
+            finally:
+                db2.close()
+
     finally:
+        _running_batches.pop(campaign_id, None)
         db.close()
+
+
+@app.post("/api/campaigns/{campaign_id}/draft-all/stop")
+def stop_draft_all(campaign_id: int):
+    _running_batches.pop(campaign_id, None)
+    return {"message": "Batch stopped"}
+
+
+@app.get("/api/campaigns/{campaign_id}/draft-all/status")
+def draft_all_status(campaign_id: int, db: Session = Depends(get_db)):
+    leads = db.query(Lead).filter(Lead.campaign_id == campaign_id).all()
+    total = len(leads)
+    counts = {"pending": 0, "drafting": 0, "drafted": 0, "error": 0, "approved": 0, "sent": 0, "skipped": 0}
+    for lead in leads:
+        s = lead.draft.status if lead.draft else "pending"
+        counts[s] = counts.get(s, 0) + 1
+    return {
+        "running": campaign_id in _running_batches,
+        "total": total,
+        "counts": counts,
+        "done": counts.get("drafted", 0) + counts.get("approved", 0) + counts.get("sent", 0),
+    }
 
 
 @app.post("/api/campaigns/{campaign_id}/draft-all")

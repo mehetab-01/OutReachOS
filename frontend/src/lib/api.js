@@ -35,6 +35,10 @@ export const draftSingle = (leadId) =>
   api.post(`/api/leads/${leadId}/draft`).then((r) => r.data);
 export const draftAll = (campaignId) =>
   api.post(`/api/campaigns/${campaignId}/draft-all`).then((r) => r.data);
+export const stopDraftAll = (campaignId) =>
+  api.post(`/api/campaigns/${campaignId}/draft-all/stop`).then((r) => r.data);
+export const getDraftAllStatus = (campaignId) =>
+  api.get(`/api/campaigns/${campaignId}/draft-all/status`).then((r) => r.data);
 export const patchDraft = (draftId, data) =>
   api.patch(`/api/drafts/${draftId}`, data).then((r) => r.data);
 
