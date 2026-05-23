@@ -209,8 +209,23 @@ async def _draft_all_task(campaign_id: int, providers_config: Optional[list],
         leads = db.query(Lead).filter(Lead.campaign_id == campaign_id).all()
         pending_ids = [
             lead.id for lead in leads
-            if (lead.draft is None or lead.draft.status not in ("approved", "sent", "drafted"))
+            if (lead.draft is None or lead.draft.status in ("pending", "error"))
         ]
+
+        # Mark all as queued immediately so frontend shows them
+        db_q = SessionLocal()
+        try:
+            for lid in pending_ids:
+                lead = db_q.query(Lead).filter(Lead.id == lid).first()
+                if lead and lead.draft:
+                    lead.draft.status = "queued"
+                    lead.draft.error_msg = None
+                elif lead and not lead.draft:
+                    lead.draft = Draft(lead_id=lid, status="queued")
+                    db_q.add(lead.draft)
+            db_q.commit()
+        finally:
+            db_q.close()
 
         queue = list(pending_ids)
         rate_limit_hits: dict = {}  # lead_id → retry count
@@ -226,12 +241,12 @@ async def _draft_all_task(campaign_id: int, providers_config: Optional[list],
 
                 draft = lead.draft
                 if not draft:
-                    draft = Draft(lead_id=lead.id, status="pending")
+                    draft = Draft(lead_id=lead.id, status="queued")
                     db2.add(draft)
                     db2.commit()
                     db2.refresh(draft)
 
-                # already done by a single-draft click
+                # already done by a single-draft click while batch was running
                 if draft.status in ("approved", "sent", "drafted"):
                     continue
 
@@ -268,10 +283,10 @@ async def _draft_all_task(campaign_id: int, providers_config: Optional[list],
                     if is_rate_limit:
                         retries = rate_limit_hits.get(lead_id, 0)
                         if retries < MAX_RATE_LIMIT_RETRIES:
-                            # put back at front of queue and wait
+                            # put back at end of queue and wait
                             rate_limit_hits[lead_id] = retries + 1
-                            queue.insert(0, lead_id)
-                            draft.status = "pending"
+                            queue.append(lead_id)
+                            draft.status = "queued"
                             draft.error_msg = None
                             db2.commit()
                             backoff = RATE_LIMIT_DELAY * (retries + 1)
@@ -302,7 +317,7 @@ def stop_draft_all(campaign_id: int):
 def draft_all_status(campaign_id: int, db: Session = Depends(get_db)):
     leads = db.query(Lead).filter(Lead.campaign_id == campaign_id).all()
     total = len(leads)
-    counts = {"pending": 0, "drafting": 0, "drafted": 0, "error": 0, "approved": 0, "sent": 0, "skipped": 0}
+    counts = {"pending": 0, "queued": 0, "drafting": 0, "drafted": 0, "error": 0, "approved": 0, "sent": 0, "skipped": 0}
     for lead in leads:
         s = lead.draft.status if lead.draft else "pending"
         counts[s] = counts.get(s, 0) + 1
