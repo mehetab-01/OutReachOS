@@ -175,7 +175,7 @@ STRICT RULES — violate any of these and the output is rejected:
 2. Opening line must be a single punchy observation — NOT an introduction. No "Hi, my name is". Jump straight into a specific insight about their situation or their competitors.
 3. Mention a concrete fact: other {category} businesses in {lead['city']} that are booking online, running Google Ads, or using AI chatbots to handle enquiries 24/7 — and {lead['name']} is missing this revenue.
 4. What we do: Arcen Studio builds websites + AI automations (auto-reply bots, booking systems, lead capture) for local businesses. One-time build, no monthly agency retainer.
-5. CTA is exactly: "If this sounds useful, just reply to this email." — nothing else, no phone calls, no calendly links, no "let's hop on a call".
+5. CTA: Invite them to a quick 5-minute Zoom call — but the ONLY way to get there is replying to this email. Write it naturally, like "If you're up for a quick 5-min Zoom to see if it's a fit, just reply here." No Calendly links, no phone numbers, no "schedule a call", no "book a meeting".
 6. Sign off: {sender}, Arcen Studio
 7. Body must be under 130 words. Short sentences. No bullet points. No corporate speak. Sound like a human who did 5 minutes of research, not a marketing department.
 8. Subject line: specific to {lead['name']}, max 8 words, no exclamation marks, no all-caps.
