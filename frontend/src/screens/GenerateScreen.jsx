@@ -94,13 +94,24 @@ export default function GenerateScreen() {
   };
 
   const handleDraftOne = async (leadId) => {
+    // Optimistically flip status in context so badge updates instantly
+    setLeads((prev) => prev.map((l) =>
+      l.id === leadId
+        ? { ...l, draft: { ...(l.draft || {}), status: "drafting", error_msg: null } }
+        : l
+    ));
     setSingleDrafting((p) => ({ ...p, [leadId]: true }));
+
+    // Poll while waiting so any intermediate state (queued→drafting→drafted) shows up
+    const pollId = setInterval(fetchLeads, 1500);
     try {
       await draftSingle(leadId);
       await fetchLeads();
     } catch (err) {
       toast({ title: "Draft failed", description: err.message, variant: "destructive" });
+      await fetchLeads();
     } finally {
+      clearInterval(pollId);
       setSingleDrafting((p) => ({ ...p, [leadId]: false }));
     }
   };
