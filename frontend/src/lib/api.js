@@ -61,3 +61,5 @@ export const deleteBatch = (batchId) =>
   api.delete(`/api/batches/${batchId}`).then((r) => r.data);
 export const getSendLog = (campaignId) =>
   api.get(`/api/campaigns/${campaignId}/sendlog`).then((r) => r.data);
+export const sendAllBatches = (campaignId, smtpConfig) =>
+  api.post(`/api/campaigns/${campaignId}/batches/send-all`, smtpConfig).then((r) => r.data);

@@ -43,6 +43,7 @@ class Draft(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     lead_id = Column(Integer, ForeignKey("leads.id"), unique=True, nullable=False)
+    batch_id = Column(Integer, ForeignKey("send_batches.id"), nullable=True)
     research = Column(Text, default="")
     subject = Column(String, default="")
     body = Column(Text, default="")

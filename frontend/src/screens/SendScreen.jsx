@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Server, Rocket, Send, Download, CheckCircle2, Info,
-  RefreshCw, Square, Trash2, Plus, Clock, BarChart2,
+  RefreshCw, Square, Trash2, Plus, Clock, BarChart2, Zap,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { useApp } from "../context/AppContext";
 import {
   listBatches, createBatches, sendBatch, stopBatch,
-  getBatchStatus, deleteBatch, getSendStats, getSendLog,
+  getBatchStatus, deleteBatch, getSendStats, getSendLog, sendAllBatches,
 } from "../lib/api";
 import { exportSendLogCSV, formatTime } from "../lib/utils";
 import { useToast } from "../components/ui/use-toast";
@@ -217,6 +217,13 @@ export default function SendScreen() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  // Auto-refresh while any batch is actively sending
+  useEffect(() => {
+    if (!anyBatchSending) return;
+    const id = setInterval(fetchAll, 3000);
+    return () => clearInterval(id);
+  }, [anyBatchSending, fetchAll]);
+
   const handleCreateBatches = async () => {
     setCreating(true);
     try {
@@ -238,6 +245,28 @@ export default function SendScreen() {
   const handleBatchDeleted = (id) => {
     setBatches((p) => p.filter((b) => b.id !== id));
   };
+
+  const [sendingAll, setSendingAll] = useState(false);
+
+  const handleSendAll = async () => {
+    if (!smtp.user || !smtp.password) {
+      toast({ title: "Enter SMTP credentials first", variant: "destructive" });
+      return;
+    }
+    setSendingAll(true);
+    try {
+      await sendAllBatches(campaign.id, { ...smtp, port: parseInt(smtp.port, 10) });
+      toast({ title: "Sending all batches sequentially — check progress below" });
+      fetchAll();
+    } catch (err) {
+      toast({ title: "Failed to start", description: err.response?.data?.detail || err.message, variant: "destructive" });
+    } finally {
+      setSendingAll(false);
+    }
+  };
+
+  const pendingBatches = batches.filter((b) => ["pending", "paused"].includes(b.status));
+  const anyBatchSending = batches.some((b) => b.status === "sending");
 
   // Cooldown: recommend 10 min after each batch finishes
   const cooldownUntil = lastSentAt ? lastSentAt + BATCH_COOLDOWN_MS : null;
@@ -354,9 +383,22 @@ export default function SendScreen() {
               <BarChart2 size={14} className="text-primary" />
               Send Batches
             </p>
-            <p className="text-xs text-gray-400">
-              25–90s random delay between emails · 10 min cooldown between batches
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-xs text-gray-400">
+                25–90s delay · 10 min cooldown between batches
+              </p>
+              {pendingBatches.length > 0 && (
+                <Button
+                  size="sm"
+                  className="gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={handleSendAll}
+                  disabled={sendingAll || anyBatchSending || !smtp.user || !smtp.password}
+                >
+                  <Zap size={11} />
+                  {sendingAll ? "Starting…" : `Send All ${pendingBatches.length} Batches`}
+                </Button>
+              )}
+            </div>
           </div>
           <div className="grid gap-3">
             {batches.map((batch) => (

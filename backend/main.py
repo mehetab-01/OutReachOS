@@ -42,6 +42,8 @@ with engine.connect() as conn:
     draft_cols = [c["name"] for c in insp.get_columns("drafts")]
     if "model_used" not in draft_cols:
         conn.execute(text("ALTER TABLE drafts ADD COLUMN model_used TEXT"))
+    if "batch_id" not in draft_cols:
+        conn.execute(text("ALTER TABLE drafts ADD COLUMN batch_id INTEGER REFERENCES send_batches(id)"))
 
     # send_logs migrations
     if insp.has_table("send_logs"):
@@ -502,9 +504,9 @@ def create_batches(
         )
         db.add(batch)
         db.flush()
-        # Tag drafts with this batch so we know which leads belong to it
         for lead in chunk:
             lead.draft.status = "batched"
+            lead.draft.batch_id = batch.id
         created.append(batch)
     db.commit()
     for b in created:
@@ -534,15 +536,9 @@ async def _drip_send_task(batch_id: int, smtp_cfg: SmtpConfigSchema, sender_name
     from database import SessionLocal
 
     stop_event = _sending_batches.get(batch_id)
+    smtp = SmtpConfig(host=smtp_cfg.host, port=smtp_cfg.port, user=smtp_cfg.user, password=smtp_cfg.password)
 
     db = SessionLocal()
-    smtp = SmtpConfig(
-        host=smtp_cfg.host,
-        port=smtp_cfg.port,
-        user=smtp_cfg.user,
-        password=smtp_cfg.password,
-    )
-
     try:
         batch = db.query(SendBatch).filter(SendBatch.id == batch_id).first()
         if not batch:
@@ -553,97 +549,76 @@ async def _drip_send_task(batch_id: int, smtp_cfg: SmtpConfigSchema, sender_name
         batch.smtp_user = smtp_cfg.user
         db.commit()
 
-        # Get all approved/batched leads that haven't been sent yet and belong to this batch
-        # We identify batch leads via send_logs absence + batched status, in creation order
-        # Approach: leads whose draft is "batched" and have no successful send_log, ordered by lead.id
-        campaign_id = batch.campaign_id
-
+        # Fetch leads that belong to this batch and haven't been sent yet
         leads = (
             db.query(Lead)
             .join(Draft)
-            .filter(
-                Lead.campaign_id == campaign_id,
-                Draft.status == "batched",
-            )
+            .filter(Draft.batch_id == batch_id, Draft.status == "batched")
             .order_by(Lead.id)
             .all()
         )
+        random.shuffle(leads)
 
-        # Slice to batch.total leads starting after already-sent count
-        already_sent = batch.sent_count
-        leads_for_batch = leads[already_sent: already_sent + batch.total]
-
-        # Shuffle randomly — different order every send
-        random.shuffle(leads_for_batch)
-
-        for lead in leads_for_batch:
+        for i, lead in enumerate(leads):
             if stop_event and stop_event.is_set():
+                batch.status = "paused"
+                db.commit()
                 break
 
-            # Check daily cap
-            today_sent = _sent_today(db, smtp_cfg.user)
-            if today_sent >= DAILY_CAP:
+            # Hard daily cap check
+            if _sent_today(db, smtp_cfg.user) >= DAILY_CAP:
                 batch.status = "paused"
                 db.commit()
                 break
 
             draft = lead.draft
-            db2 = SessionLocal()
-            try:
-                lead2 = db2.query(Lead).filter(Lead.id == lead.id).first()
-                draft2 = lead2.draft if lead2 else None
-                if not draft2 or draft2.status not in ("batched", "approved"):
-                    continue
+            sent_ok = False
 
+            for attempt in range(2):  # retry once on transient SMTP error
                 try:
                     response = await send_email(
                         smtp=smtp,
-                        to_email=lead2.email,
-                        to_name=lead2.name,
+                        to_email=lead.email,
+                        to_name=lead.name,
                         from_name=sender_name,
                         from_email=sender_email,
-                        subject=draft2.subject,
-                        body=draft2.body,
+                        subject=draft.subject,
+                        body=draft.body,
                     )
-                    draft2.status = "sent"
-                    draft2.sent_at = datetime.utcnow()
-                    log = SendLog(
-                        draft_id=draft2.id,
-                        lead_id=lead2.id,
+                    draft.status = "sent"
+                    draft.sent_at = datetime.utcnow()
+                    db.add(SendLog(
+                        draft_id=draft.id,
+                        lead_id=lead.id,
                         batch_id=batch_id,
                         smtp_response=response,
                         sent_at=datetime.utcnow(),
                         smtp_user=smtp_cfg.user,
-                    )
-                    db2.add(log)
-                    db2.commit()
-
-                    # Update batch counters
-                    batch_upd = db.query(SendBatch).filter(SendBatch.id == batch_id).first()
-                    batch_upd.sent_count += 1
+                    ))
+                    batch.sent_count += 1
                     db.commit()
-
+                    sent_ok = True
+                    break
                 except Exception as e:
-                    draft2.status = "error"
-                    draft2.error_msg = str(e)
-                    db2.commit()
-                    batch_upd = db.query(SendBatch).filter(SendBatch.id == batch_id).first()
-                    batch_upd.error_count += 1
-                    db.commit()
+                    err = str(e)
+                    if attempt == 0:
+                        # Wait 10s then retry once
+                        await asyncio.sleep(10)
+                    else:
+                        draft.status = "error"
+                        draft.error_msg = err
+                        batch.error_count += 1
+                        db.commit()
 
-            finally:
-                db2.close()
+            # Drip delay between emails (skip after last one)
+            if sent_ok and i < len(leads) - 1:
+                await asyncio.sleep(random.uniform(DRIP_MIN_S, DRIP_MAX_S))
 
-            # Random drip delay between emails
-            if leads_for_batch.index(lead) < len(leads_for_batch) - 1:
-                delay = random.uniform(DRIP_MIN_S, DRIP_MAX_S)
-                await asyncio.sleep(delay)
-
-        # Mark batch done
-        final_batch = db.query(SendBatch).filter(SendBatch.id == batch_id).first()
-        if final_batch and final_batch.status == "sending":
-            final_batch.status = "sent"
-            final_batch.finished_at = datetime.utcnow()
+        # Mark batch complete if still in sending state
+        db.refresh(batch)
+        if batch.status == "sending":
+            batch.status = "sent"
+            batch.finished_at = datetime.utcnow()
             db.commit()
 
     finally:
@@ -679,6 +654,48 @@ async def send_batch(
         campaign.sender_email,
     )
     return {"message": f"Drip sending batch {batch.label} ({batch.total} emails)"}
+
+
+@app.post("/api/campaigns/{campaign_id}/batches/send-all")
+async def send_all_batches(
+    campaign_id: int,
+    smtp_config: SmtpConfigSchema,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Start all pending/paused batches sequentially in the background."""
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    pending_batches = (
+        db.query(SendBatch)
+        .filter(SendBatch.campaign_id == campaign_id, SendBatch.status.in_(["pending", "paused"]))
+        .order_by(SendBatch.created_at)
+        .all()
+    )
+    if not pending_batches:
+        raise HTTPException(status_code=400, detail="No pending batches to send")
+
+    already_sending = [b.id for b in pending_batches if b.id in _sending_batches]
+    if already_sending:
+        raise HTTPException(status_code=400, detail="A batch is already sending")
+
+    batch_ids = [b.id for b in pending_batches]
+
+    async def _send_all_sequentially():
+        for bid in batch_ids:
+            if any(e.is_set() for e in _sending_batches.values()):
+                break
+            stop_event = asyncio.Event()
+            _sending_batches[bid] = stop_event
+            await _drip_send_task(bid, smtp_config, campaign.sender_name, campaign.sender_email)
+            # Cooldown between batches to protect SMTP reputation
+            if bid != batch_ids[-1]:
+                await asyncio.sleep(BATCH_COOLDOWN_MIN * 60)
+
+    background_tasks.add_task(_send_all_sequentially)
+    return {"message": f"Sending {len(batch_ids)} batches sequentially", "batch_ids": batch_ids}
 
 
 @app.post("/api/batches/{batch_id}/stop")
