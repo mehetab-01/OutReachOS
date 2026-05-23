@@ -170,20 +170,23 @@ LEAD INFO:
 - Online presence: {review_note}, {social_note}, NO WEBSITE
 - Services we offer: {campaign['services']}
 
-STRICT RULES — violate any of these and the output is rejected:
-1. FORBIDDEN phrases (never use): "I hope this email finds you", "I came across", "I noticed", "game-changer", "take your business to the next level", "I wanted to reach out", "digital presence", "online presence", "leverage", "revolutionary", "innovative", "transform your business"
-2. Opening line must be a single punchy observation — NOT an introduction. No "Hi, my name is". Jump straight into a specific insight about their situation or their competitors.
-3. Mention a concrete fact: other {category} businesses in {lead['city']} that are booking online, running Google Ads, or using AI chatbots to handle enquiries 24/7 — and {lead['name']} is missing this revenue.
-4. What we do: Arcen Studio builds websites + AI automations (auto-reply bots, booking systems, lead capture) for local businesses. One-time build, no monthly agency retainer.
-5. CTA: Invite them to a quick 5-minute Zoom call — but the ONLY way to get there is replying to this email. Write it naturally, like "If you're up for a quick 5-min Zoom to see if it's a fit, just reply here." No Calendly links, no phone numbers, no "schedule a call", no "book a meeting".
-6. Sign off: {sender}\\nArcen Studio
-7. Body must be under 130 words. Short sentences. No bullet points. No corporate speak. Sound like a human who did 5 minutes of research, not a marketing department.
-8. Subject line: specific to {lead['name']}, max 8 words, no exclamation marks, no all-caps.
-9. FORMATTING: The body field must use \\n\\n to separate each paragraph. Structure must be exactly 4 paragraphs: (1) hook/observation, (2) competitor gap, (3) what we do + no retainer, (4) CTA line. Then a blank line, then the sign-off. Like this example structure:
-   "Other groomers in Coal City are booking online while you\\'re still on calls.\\n\\nPet Palace runs Google Ads and an AI chatbot — they\\'re pulling enquiries 24/7 without picking up the phone.\\n\\nWe build websites and AI automations for local businesses. One-time cost, no monthly agency fees.\\n\\nIf you\\'re up for a quick 5-min Zoom to see if it\\'s a fit, just reply here.\\n\\n{sender}\\nArcen Studio"
+FORBIDDEN phrases — using any of these means the output is wrong:
+"I hope this email finds you", "I came across", "I noticed", "game-changer", "take your business to the next level", "I wanted to reach out", "digital presence", "online presence", "leverage", "transform your business", "revolutionize", "innovative solution"
 
-OUTPUT FORMAT (strict JSON, no markdown, no code fences):
-{{"research":"2 sentence max: what {category} businesses in {lead['city']} are doing online that {lead['name']} isn't — be specific","subject":"...","body":"..."}}"""
+Write the email as 4 separate short paragraphs. Each paragraph is a separate JSON field:
+
+p1 (hook): One punchy sentence. A raw observation about {lead['name']}'s situation — no intro, no name, jump straight in. Example: "Most pet groomers in Coal City are booking online. {lead['name']} isn't."
+
+p2 (competitor gap): 1-2 sentences. Name what competitor {category} businesses in {lead['city']} are doing that {lead['name']} is missing — online bookings, Google Ads, AI chatbots answering enquiries 24/7.
+
+p3 (what we do): 2 sentences max. Arcen Studio builds websites + AI automations (auto-reply bots, booking systems, lead capture) for local businesses. One-time build, no monthly retainer.
+
+p4 (CTA): One sentence. Invite them to a quick 5-min Zoom — only via replying to this email. Example: "If you're up for a quick 5-min Zoom to see if it's a fit, just reply here."
+
+Rules: Short sentences. No bullet points. No corporate speak. Under 100 words total across all 4 paragraphs. Subject max 8 words, no exclamation marks.
+
+OUTPUT — strict JSON only, no markdown, no code fences:
+{{"research":"what {category} businesses in {lead['city']} do online that {lead['name']} doesn't — 2 sentences max","subject":"...","p1":"...","p2":"...","p3":"...","p4":"..."}}"""
 
 
 def _parse_json(raw: str) -> dict:
@@ -195,6 +198,14 @@ def _parse_json(raw: str) -> dict:
     if match:
         raw = match.group(0)
     parsed = json.loads(raw)
+    # Assemble paragraph-keyed response into body
+    if "p1" in parsed:
+        parts = [parsed.get("p1", ""), parsed.get("p2", ""), parsed.get("p3", ""), parsed.get("p4", "")]
+        sender_line = parsed.get("sender", "")
+        body = "\n\n".join(p.strip() for p in parts if p.strip())
+        if sender_line:
+            body += f"\n\n{sender_line}"
+        parsed["body"] = body
     if not all(k in parsed for k in ("research", "subject", "body")):
         raise ValueError(f"Missing keys: {list(parsed.keys())}")
     return parsed
