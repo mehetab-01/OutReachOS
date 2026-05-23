@@ -201,6 +201,12 @@ export default function SendScreen() {
   const batched  = leads.filter((l) => l.draft?.status === "batched").length;
   const sent     = leads.filter((l) => l.draft?.status === "sent").length;
 
+  // Derived from batches state — must be above useEffect that references them
+  const pendingBatches = batches.filter((b) => ["pending", "paused"].includes(b.status));
+  const anyBatchSending = batches.some((b) => b.status === "sending");
+
+  const [sendingAll, setSendingAll] = useState(false);
+
   const fetchAll = useCallback(async () => {
     if (!campaign?.id) return;
     const [bl, sl] = await Promise.all([
@@ -246,8 +252,6 @@ export default function SendScreen() {
     setBatches((p) => p.filter((b) => b.id !== id));
   };
 
-  const [sendingAll, setSendingAll] = useState(false);
-
   const handleSendAll = async () => {
     if (!smtp.user || !smtp.password) {
       toast({ title: "Enter SMTP credentials first", variant: "destructive" });
@@ -264,9 +268,6 @@ export default function SendScreen() {
       setSendingAll(false);
     }
   };
-
-  const pendingBatches = batches.filter((b) => ["pending", "paused"].includes(b.status));
-  const anyBatchSending = batches.some((b) => b.status === "sending");
 
   // Cooldown: recommend 10 min after each batch finishes
   const cooldownUntil = lastSentAt ? lastSentAt + BATCH_COOLDOWN_MS : null;

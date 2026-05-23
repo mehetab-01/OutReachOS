@@ -683,15 +683,17 @@ async def send_all_batches(
 
     batch_ids = [b.id for b in pending_batches]
 
+    master_stop = asyncio.Event()
+
     async def _send_all_sequentially():
         for bid in batch_ids:
-            if any(e.is_set() for e in _sending_batches.values()):
+            if master_stop.is_set():
                 break
             stop_event = asyncio.Event()
             _sending_batches[bid] = stop_event
             await _drip_send_task(bid, smtp_config, campaign.sender_name, campaign.sender_email)
             # Cooldown between batches to protect SMTP reputation
-            if bid != batch_ids[-1]:
+            if bid != batch_ids[-1] and not master_stop.is_set():
                 await asyncio.sleep(BATCH_COOLDOWN_MIN * 60)
 
     background_tasks.add_task(_send_all_sequentially)

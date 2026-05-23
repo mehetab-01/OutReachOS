@@ -509,20 +509,23 @@ async def draft_lead(
         caller = _CALLERS.get(provider)
         if not caller:
             continue
-        last_err = None
-        for attempt in range(3):
-            try:
-                result = await caller(model_id, key, prompt)
-                result["model_used"] = model_id
-                result["provider_used"] = provider
-                return result
-            except Exception as e:
-                last_err = e
-                if _is_quota_error(str(e).lower()):
-                    break
-                if attempt < 2:
-                    await asyncio.sleep(2 ** attempt * 2)
-        errors.append(f"{provider}/{model_id}: {last_err}")
+        try:
+            result = await caller(model_id, key, prompt)
+            result["model_used"] = model_id
+            result["provider_used"] = provider
+            return result
+        except Exception as e:
+            err_str = str(e)
+            if not _is_quota_error(err_str):
+                # One retry on transient error, no sleep
+                try:
+                    result = await caller(model_id, key, prompt)
+                    result["model_used"] = model_id
+                    result["provider_used"] = provider
+                    return result
+                except Exception as e2:
+                    err_str = str(e2)
+            errors.append(f"{provider}/{model_id}: {err_str}")
 
     raise RuntimeError("All providers exhausted. Errors: " + " | ".join(errors))
 
