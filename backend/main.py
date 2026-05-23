@@ -277,8 +277,8 @@ async def _draft_all_task(campaign_id: int, providers_config: Optional[list],
         _running_batches.pop(campaign_id, None)
         return
 
-    # ── 4. Callbacks written to DB ─────────────────────────────────────────────
-    async def on_result(lead_id: int, result: dict):
+    # ── 4. DB callbacks ────────────────────────────────────────────────────────
+    async def _save_result(lead_id: int, result: dict):
         db2 = SessionLocal()
         try:
             lead = db2.query(Lead).filter(Lead.id == lead_id).first()
@@ -296,7 +296,7 @@ async def _draft_all_task(campaign_id: int, providers_config: Optional[list],
         finally:
             db2.close()
 
-    async def on_error(lead_id: int, err_str: str, is_quota: bool):
+    async def _save_error(lead_id: int, err_str: str, _is_quota: bool):
         db2 = SessionLocal()
         try:
             lead = db2.query(Lead).filter(Lead.id == lead_id).first()
@@ -307,12 +307,7 @@ async def _draft_all_task(campaign_id: int, providers_config: Optional[list],
         finally:
             db2.close()
 
-    # ── 5. Mark each lead as "drafting" when dispatcher picks it up ───────────
-    # We patch on_result/on_error to also set status before calling AI.
-    # Instead, use a pre-dispatch hook via a wrapper queue watcher.
-    # Simpler: mark as "drafting" inside a thin wrapper around on_result.
-
-    async def mark_drafting(lead_id: int):
+    async def _mark_drafting(lead_id: int):
         db2 = SessionLocal()
         try:
             lead = db2.query(Lead).filter(Lead.id == lead_id).first()
@@ -323,70 +318,18 @@ async def _draft_all_task(campaign_id: int, providers_config: Optional[list],
         finally:
             db2.close()
 
-    # Wrap the dispatcher's worker to mark drafting before calling AI
-    original_worker = ParallelDispatcher._worker
-
-    async def _worker_with_drafting(self_lane, lane):
-        while not stop_event.is_set():
-            while not lane.is_available():
-                if stop_event.is_set():
-                    return
-                await asyncio.sleep(1)
-            try:
-                item = self_lane._queue.get_nowait()
-            except asyncio.QueueEmpty:
-                await asyncio.sleep(0.1)
-                continue
-
-            lead_id, lead, campaign, prompt, retries = item
-            await mark_drafting(lead_id)
-
-            from ai import _CALLERS, _is_quota_error
-            try:
-                result = await lane.call(prompt)
-                result["model_used"] = lane.model_id
-                result["provider_used"] = lane.provider
-                await self_lane.on_result(lead_id, result)
-                self_lane._queue.task_done()
-            except Exception as e:
-                err_str = str(e)
-                is_quota = _is_quota_error(err_str)
-                if is_quota:
-                    is_rpd = any(k in err_str.lower() for k in ("rpd", "daily", "day limit", "exhausted"))
-                    if is_rpd:
-                        lane.exhausted = True
-                    else:
-                        lane.freeze(60)
-                    if retries < 3:
-                        self_lane._queue.put_nowait((lead_id, lead, campaign, prompt, retries + 1))
-                        self_lane._queue.task_done()
-                    else:
-                        await self_lane.on_error(lead_id, f"All lanes quota-exhausted: {err_str[:300]}", True)
-                        self_lane._queue.task_done()
-                else:
-                    if retries < 2:
-                        await asyncio.sleep(2)
-                        self_lane._queue.put_nowait((lead_id, lead, campaign, prompt, retries + 1))
-                        self_lane._queue.task_done()
-                    else:
-                        await self_lane.on_error(lead_id, err_str[:400], False)
-                        self_lane._queue.task_done()
-
-    # ── 6. Run dispatcher ─────────────────────────────────────────────────────
+    # ── 5. Run dispatcher ─────────────────────────────────────────────────────
     from ai import _build_prompt
-    dispatcher = ParallelDispatcher(lanes, on_result, on_error, stop_event)
-
-    # Override _worker with our drafting-aware version
-    ParallelDispatcher._worker = _worker_with_drafting
+    dispatcher = ParallelDispatcher(lanes, _save_result, _save_error, stop_event)
 
     for lead_id, lead_dict, campaign_dict in pending:
         prompt = _build_prompt(lead_dict, campaign_dict)
-        dispatcher.enqueue(lead_id, lead_dict, campaign_dict, prompt)
+        await _mark_drafting(lead_id)
+        dispatcher.enqueue(lead_id, prompt)
 
     try:
         await dispatcher.run()
     finally:
-        ParallelDispatcher._worker = original_worker
         _running_batches.pop(campaign_id, None)
 
 

@@ -371,84 +371,107 @@ class _Lane:
 
 
 # ── Parallel batch dispatcher ─────────────────────────────────────────────────
+#
+# Design:
+#   - One worker coroutine per lane. Workers pull from a shared asyncio.Queue.
+#   - Each worker tries ITS OWN lane's token bucket first, then on any failure
+#     immediately falls back through ALL other available lanes — no re-queuing.
+#   - task_done() is called exactly once per item, only after the item is fully
+#     resolved (success or permanent error). This fixes the broken queue counter
+#     that caused premature join() and workers being cancelled mid-flight.
+#   - RPM 429 → freeze that lane 60s but the current item already tried a
+#     fallback lane, so it never gets stuck waiting.
+#   - RPD exhaustion → lane.exhausted = True, skipped by all workers forever.
 
 class ParallelDispatcher:
-    """
-    Runs N lanes in parallel. Each lane respects its own RPM token bucket.
-    A shared asyncio.Queue feeds lead-ids to worker coroutines.
-    On 429 the lane freezes for 60s and the lead re-queues.
-    On RPD exhaustion the lane is retired.
-    """
-
-    def __init__(self, lanes: list[_Lane], on_result, on_error, stop_event: asyncio.Event):
+    def __init__(self, lanes: list, on_result, on_error, stop_event: asyncio.Event):
         self.lanes = [l for l in lanes if l.is_available()]
-        self.on_result = on_result  # async callback(lead_id, result)
-        self.on_error = on_error    # async callback(lead_id, err_str, is_quota)
+        self.on_result = on_result
+        self.on_error = on_error
         self.stop_event = stop_event
         self._queue: asyncio.Queue = asyncio.Queue()
 
-    def enqueue(self, lead_id: int, lead: dict, campaign: dict, prompt: str):
-        self._queue.put_nowait((lead_id, lead, campaign, prompt, 0))  # 0 = retry count
+    def enqueue(self, lead_id: int, prompt: str):
+        self._queue.put_nowait((lead_id, prompt))
 
     async def run(self):
         if not self.lanes:
             return
-        workers = [asyncio.create_task(self._worker(lane)) for lane in self.lanes]
+        workers = [asyncio.create_task(self._worker(i)) for i in range(len(self.lanes))]
         await self._queue.join()
         for w in workers:
             w.cancel()
         await asyncio.gather(*workers, return_exceptions=True)
 
-    async def _worker(self, lane: _Lane):
+    async def _worker(self, lane_idx: int):
+        """Each worker owns one lane but falls back through others on failure."""
         while not self.stop_event.is_set():
-            # Wait until this lane is available (unfrozen)
-            while not lane.is_available():
-                if self.stop_event.is_set():
-                    return
-                await asyncio.sleep(1)
-
             try:
-                item = self._queue.get_nowait()
-            except asyncio.QueueEmpty:
-                await asyncio.sleep(0.1)
+                lead_id, prompt = await asyncio.wait_for(
+                    self._queue.get(), timeout=0.5
+                )
+            except asyncio.TimeoutError:
                 continue
 
-            lead_id, lead, campaign, prompt, retries = item
+            result = await self._try_all_lanes(lane_idx, prompt)
+
+            if result is not None:
+                await self.on_result(lead_id, result)
+            else:
+                await self.on_error(lead_id, "All lanes failed for this lead", True)
+
+            self._queue.task_done()
+
+    async def _try_all_lanes(self, preferred_idx: int, prompt: str) -> Optional[dict]:
+        """Try preferred lane first, then round-robin through the rest."""
+        n = len(self.lanes)
+        order = [preferred_idx] + [(preferred_idx + i) % n for i in range(1, n)]
+
+        for idx in order:
+            if self.stop_event.is_set():
+                return None
+            lane = self.lanes[idx]
+            if lane.exhausted:
+                continue
+
+            # Wait for this lane's rate-limit window (token bucket)
+            # but don't wait more than 30s — move to next lane instead
+            waited = 0.0
+            while not lane.is_available():
+                if waited >= 30:
+                    break
+                await asyncio.sleep(1)
+                waited += 1
+            if not lane.is_available():
+                continue
 
             try:
                 result = await lane.call(prompt)
                 result["model_used"] = lane.model_id
                 result["provider_used"] = lane.provider
-                await self.on_result(lead_id, result)
-                self._queue.task_done()
-
+                return result
             except Exception as e:
                 err_str = str(e)
                 is_quota = _is_quota_error(err_str)
-
                 if is_quota:
-                    # Check if it's RPD exhaustion vs RPM throttle
                     is_rpd = any(k in err_str.lower() for k in ("rpd", "daily", "day limit", "exhausted"))
                     if is_rpd:
                         lane.exhausted = True
                     else:
-                        lane.freeze(60)  # RPM — thaw after 60s
-
-                    if retries < 3:
-                        # Re-queue the lead for another lane to pick up
-                        self._queue.put_nowait((lead_id, lead, campaign, prompt, retries + 1))
-                        self._queue.task_done()
-                    else:
-                        await self.on_error(lead_id, f"All lanes quota-exhausted: {err_str[:300]}", True)
-                        self._queue.task_done()
+                        lane.freeze(60)
+                    # Don't return — try next lane immediately
                 else:
-                    if retries < 2:
-                        await asyncio.sleep(2)
-                        self._queue.put_nowait((lead_id, lead, campaign, prompt, retries + 1))
-                        self._queue.task_done()
-                    else:
-                        await self.on_error(lead_id, err_str[:400], False)
-                        self._queue.task_done()
+                    # Non-quota error (network, parse, etc.) — retry this lane once
+                    await asyncio.sleep(2)
+                    try:
+                        result = await lane.call(prompt)
+                        result["model_used"] = lane.model_id
+                        result["provider_used"] = lane.provider
+                        return result
+                    except Exception:
+                        pass  # fall through to next lane
+
+        return None  # all lanes failed
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -495,7 +518,7 @@ async def draft_lead(
 
 
 def build_lanes(providers_config: Optional[list], api_key: Optional[str],
-                api_keys: Optional[list], model: Optional[str]) -> list[_Lane]:
+                api_keys: Optional[list], model: Optional[str]) -> list:
     """Build lane list from user config + env keys. Called by the batch dispatcher."""
     attempts = _build_attempt_list(providers_config, api_key, api_keys, model)
     seen = set()
