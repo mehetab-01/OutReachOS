@@ -19,6 +19,7 @@ export default function GenerateScreen() {
   const drafted  = leads.filter((l) => ["drafted","approved","sent"].includes(l.draft?.status)).length;
   const queued   = leads.filter((l) => l.draft?.status === "queued").length;
   const drafting = leads.filter((l) => l.draft?.status === "drafting").length;
+  const errors   = leads.filter((l) => l.draft?.status === "error").length;
   const total    = leads.length;
 
   const fetchLeads = useCallback(async () => {
@@ -131,6 +132,13 @@ export default function GenerateScreen() {
                 : <><Square size={13} /> Stop Queue</>
               }
             </Button>
+          ) : errors > 0 ? (
+            <Button
+              className="bg-red-500 hover:bg-red-600 text-white gap-2"
+              onClick={handleDraftAll}
+            >
+              <RefreshCw size={14} /> Retry {errors} Error{errors > 1 ? "s" : ""}
+            </Button>
           ) : (
             <Button
               className="bg-primary hover:bg-primary-dark gap-2"
@@ -156,8 +164,8 @@ export default function GenerateScreen() {
           </div>
           <Progress value={(drafted / total) * 100} className="h-2 mb-4" />
 
-          {/* Live status chips */}
-          {batchRunning && (
+          {/* Status chips — shown during batch AND whenever there are errors */}
+          {(batchRunning || errors > 0) && (
             <div className="flex items-center gap-3 flex-wrap">
               {drafting > 0 && (
                 <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
@@ -177,9 +185,17 @@ export default function GenerateScreen() {
                   {drafted} done
                 </div>
               )}
-              <span className="text-[10px] text-gray-400 ml-auto">
-                Sequential queue · auto rate-limit backoff
-              </span>
+              {errors > 0 && (
+                <div className="flex items-center gap-1.5 text-xs font-medium text-red-700 bg-red-50 px-2.5 py-1 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block" />
+                  {errors} failed
+                </div>
+              )}
+              {batchRunning && (
+                <span className="text-[10px] text-gray-400 ml-auto">
+                  Sequential queue · auto rate-limit backoff
+                </span>
+              )}
             </div>
           )}
         </div>
