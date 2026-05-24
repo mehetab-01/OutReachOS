@@ -2,13 +2,13 @@ import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCMEOnfT-dTvo2NJdvHwvbcTxCBMKQ23lY",
-  authDomain: "outreachos-7980.firebaseapp.com",
-  projectId: "outreachos-7980",
-  storageBucket: "outreachos-7980.firebasestorage.app",
-  messagingSenderId: "368195081871",
-  appId: "1:368195081871:web:4b978fb704f1b6f27202fa",
-  measurementId: "G-4051MJ3XFK",
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_FIREBASE_APP_ID,
+  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID,
 };
 
 const app = initializeApp(firebaseConfig);
