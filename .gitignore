@@ -26,6 +26,19 @@ frontend/.env.local
 .DS_Store
 Thumbs.db
 
+# Logs
+*.log
+backend/uvicorn.log
+backend/uvicorn_err.log
+frontend/npm.log
+frontend/npm_err.log
+
+# Playwright
+.playwright-mcp/
+
+# Internal docs
+docs/superpowers/
+
 # IDE
 .vscode/
 .idea/

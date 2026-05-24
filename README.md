@@ -2,11 +2,11 @@
 
 # OutreachOS
 
-**AI-powered cold email automation for web development agencies**
+**AI-powered cold email automation — from lead list to sent in minutes**
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
-[![Gemini](https://img.shields.io/badge/Gemini-1.5%20Flash-4285F4?style=flat-square&logo=google&logoColor=white)](https://aistudio.google.com)
+[![AI](https://img.shields.io/badge/AI-Gemini%20%7C%20Groq%20%7C%20Cerebras%20%7C%20Mistral-8B5CF6?style=flat-square&logo=openai&logoColor=white)](#ai-providers)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docker.com)
 [![License](https://img.shields.io/badge/license-MIT-purple?style=flat-square)](LICENSE)
@@ -19,25 +19,93 @@
 
 ## What is OutreachOS?
 
-OutreachOS turns a CSV of business leads into personalized cold emails in minutes. Upload your list of businesses without websites, let Gemini AI research each one and write a tailored email, review every draft before it goes out, then send via Gmail — all in a clean 5-step flow anyone can use.
+OutreachOS turns a raw CSV of business leads into personalized cold emails — researched, written, reviewed, and delivered — without any copy-pasting or manual work.
 
-**Built for Arcen Studio's outreach workflow. Zero manual copy-pasting. Zero generic emails.**
+Drop in a list of businesses. AI researches each one, writes a tailored email with a competitor gap angle and a clear CTA. You review and approve. One click sends everything via Gmail with human-like delays built in.
+
+**Zero generic emails. Zero manual effort. Full control.**
+
+---
+
+## Screenshots
+
+### 01 — Import Leads
+![Import Screen](docs/screenshots/01-import.png)
+
+### 02 — Configure Campaign
+![Configure Screen](docs/screenshots/02-configure.png)
+
+### 03 — AI Draft Engine
+![Generate Screen](docs/screenshots/03-generate.png)
+
+### 04 — Review & Edit
+![Review Screen](docs/screenshots/04-review.png)
+
+### 05 — Send
+![Send Screen](docs/screenshots/05-send.png)
 
 ---
 
 ## The 5-Step Flow
 
 ```
-📥 Import CSV  →  ⚙️ Configure  →  🤖 AI Draft  →  👁 Review  →  📨 Send
+📥 Import  →  ⚙️ Configure  →  🤖 Generate  →  👁 Review  →  📨 Send
 ```
 
 | Step | What happens |
 |------|-------------|
 | **01 Import** | Drag-drop your CSV, preview leads, flag missing emails |
-| **02 Configure** | Set campaign name, tone, CTA, agency pitch |
-| **03 Generate** | Gemini researches each business + writes a personalized email |
-| **04 Review** | Edit subject/body per lead, approve or skip |
-| **05 Send** | Gmail SMTP with anti-spam delays, real-time log |
+| **02 Configure** | Set pitch, tone, CTA, sender details, and AI providers |
+| **03 Generate** | AI researches each business and writes a personalized cold email |
+| **04 Review** | Read AI research, edit subject/body per lead, approve or skip, redraft individually |
+| **05 Send** | Drip-send in batches with 25–90s human-like delays, daily cap, full send log |
+
+---
+
+## Key Features
+
+**AI Email Writing**
+- Parallel multi-provider drafting — Gemini, Groq, Cerebras, Mistral, OpenRouter, Claude
+- Automatic fallback if any provider hits rate limits
+- Strict anti-slop prompt — no "I hope this finds you well", no corporate speak
+- Structured 4-paragraph format: hook → competitor gap → what we do → CTA
+
+**Batch Sending**
+- Split approved leads into labelled batches (A, B, C…)
+- 25–90 second random delay between emails — mimics human sending
+- 10-minute cooldown enforced between batches
+- Hard daily cap (400 emails/account) to protect deliverability
+- **Send All** button — runs all batches sequentially, fully autonomous, no human needed after first click
+- Real-time progress per batch with sent/error counts
+
+**Review Workflow**
+- Per-lead email editor with live subject + body fields
+- AI Research panel shows competitor context behind each email
+- Approve, Skip, or Redraft individually
+- Approve All Drafted in one click
+
+**Infrastructure**
+- FastAPI async backend — polls and sends never block each other
+- SQLite with safe schema migrations on startup
+- Docker Compose + Caddy for production deploy
+- SMTP credentials stay in-browser only — never stored in DB
+
+---
+
+## AI Providers
+
+OutreachOS supports 6 providers, all configurable from the UI — no code changes needed.
+
+| Provider | Free Tier | Notes |
+|----------|-----------|-------|
+| **Gemini** | ✅ Yes | `gemini-2.0-flash-lite` recommended |
+| **Groq** | ✅ Yes | `llama-3.1-8b-instant` — fastest |
+| **Cerebras** | ✅ Yes | `llama3.1-8b` — very fast inference |
+| **Mistral** | ✅ Yes | `mistral-small-latest` |
+| **OpenRouter** | ✅ Free models | Routes to many providers |
+| **Claude** | Paid | `claude-haiku-4-5` — highest quality |
+
+Add API keys in **Configure → AI Configuration**. Keys are stored in `sessionStorage` only.
 
 ---
 
@@ -45,220 +113,90 @@ OutreachOS turns a CSV of business leads into personalized cold emails in minute
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 18 + Tailwind CSS + shadcn/ui + Lucide |
-| Backend | FastAPI (Python 3.11) + SQLAlchemy |
-| AI | Gemini 1.5 Flash (Google AI) |
+| Frontend | React 18 + Tailwind CSS + shadcn/ui + Lucide Icons |
+| Backend | FastAPI (Python 3.11) + SQLAlchemy ORM |
+| AI | Multi-provider: Gemini, Groq, Cerebras, Mistral, OpenRouter, Claude |
 | Database | SQLite (persistent Docker volume) |
-| Email | smtplib — Gmail SMTP + App Password |
-| Deploy | Docker Compose + Caddy + Cloudflare Tunnel |
+| Email | smtplib STARTTLS — Gmail App Password |
+| Deploy | Docker Compose + Caddy reverse proxy |
 
 ---
 
-## Prerequisites
+## Quick Start
 
-Before you start, you need:
+### Prerequisites
 
-- **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** — to run the app
-- **[Gemini API key](https://aistudio.google.com/)** — free tier works fine for most campaigns
-- **Gmail App Password** — a special password just for OutreachOS (not your real Gmail password)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- At least one AI API key (Gemini free tier is enough to start)
+- Gmail App Password for sending
 
----
-
-## Setup Guide
-
-### Step 1 — Get your Gemini API key
-
-1. Go to **[aistudio.google.com](https://aistudio.google.com/)**
-2. Click **Get API key** → **Create API key in new project**
-3. Copy the key (starts with `AIza...`)
-
-### Step 2 — Create a Gmail App Password
-
-> This is a one-time setup. You'll use this password in OutreachOS instead of your Gmail password.
-
-1. Go to **[myaccount.google.com/security](https://myaccount.google.com/security)**
-2. Under *How you sign in to Google*, click **2-Step Verification** and enable it
-3. Search for **App passwords** (top search bar)
-4. Select app: **Mail** · Select device: **Other** → type `OutreachOS`
-5. Click **Generate** → copy the 16-character password (e.g. `abcd efgh ijkl mnop`)
-
-### Step 3 — Run OutreachOS
+### Run locally
 
 ```bash
-# 1. Clone the repo
+# 1. Clone
 git clone https://github.com/mehetab-01/outreachos.git
 cd outreachos
 
-# 2. Copy the example env file
+# 2. Set up environment
 cp .env.example .env
+# Edit .env — add at least one AI key
 
-# 3. Open .env in any text editor and fill in your keys
-#    GEMINI_API_KEY=AIza...
-#    SMTP_USER=your@gmail.com
-#    SMTP_PASS=abcd efgh ijkl mnop
-
-# 4. Start everything
+# 3. Start
 docker compose up --build
 ```
 
-5. Open **[http://localhost:3000](http://localhost:3000)** in your browser ✅
+Open **http://localhost:3000** — first build takes ~3 minutes, restarts are instant.
 
-> **First run takes ~3 minutes** while Docker downloads and builds the images. After that, `docker compose up` starts in seconds.
+### Without Docker (dev mode)
+
+```bash
+# Backend
+cd backend
+pip install -r requirements.txt
+cp ../.env.example .env   # fill in your keys
+uvicorn main:app --reload --port 8000
+
+# Frontend (separate terminal)
+cd frontend
+npm install
+npm start
+```
 
 ---
 
-## Running a Campaign (Soham's Guide)
+## Environment Variables
 
-> You don't need to touch any code. Just follow these steps every time.
+Copy `.env.example` to `.env` and fill in the keys you have. You only need **one** AI provider to start.
 
-### Step 1 — Import your leads
-
-- Open OutreachOS at **http://localhost:3000**
-- Drag your CSV file onto the upload area, or click **Load 5 sample leads** to test first
-- Check the preview table — rows highlighted in **red** have a missing email address
-- Click **Confirm & Continue**
-
-### Step 2 — Configure your campaign
-
-- Check the campaign name and your reply-to email
-- Adjust the **CTA** if needed (what you want them to do — e.g. "a 5-minute call")
-- Pick a **tone**: *Conversational* works best for most small businesses
-- Click **Save & Continue**
-
-### Step 3 — Let AI draft the emails
-
-- Click **Draft All X Leads** — Gemini will research each business and write a personalized email
-- The status of each lead changes: `Pending → Drafting… → Drafted`
-- Takes about **10–15 seconds per lead**
-- Click **View Drafts** when you see progress finish
-
-### Step 4 — Review every email
-
-- Click each business name in the left sidebar to open their email
-- Read the purple **AI Research** box — this is what Gemini found about their online presence
-- Edit the **Subject** or **Body** directly if anything needs tweaking
-- Click **Approve** for emails you're happy with, **Skip** to exclude
-- Use **Approve All Drafted** to approve everything at once when you're satisfied
-
-### Step 5 — Send
-
-- Your Gmail credentials are usually already filled in from the server
-- Check the stats: Approved count should match what you expect
-- Click **Send X Emails Now**
-- Watch the **real-time send log** — each sent email appears as it goes out
-- Click **Export CSV** to save the send log for your records
+```env
+# AI Providers — add whichever you have
+GEMINI_API_KEY=AIza...
+GROQ_API_KEY=gsk_...
+CEREBRAS_API_KEY=csk-...
+MISTRAL_API_KEY=...
+OPENROUTER_API_KEY=sk-or-v1-...
+ANTHROPIC_API_KEY=sk-ant-...
+```
 
 ---
 
 ## CSV Format
 
-Your CSV file should have these columns. Header names are flexible — OutreachOS detects common variations automatically.
-
-| Column | Also recognized as | Required |
-|--------|-------------------|----------|
-| `name` | `business_name` | ✅ Yes |
-| `email` | `emails`, `email_address` | ✅ Yes |
-| `city` | `location` | ✅ Yes |
-| `business_category` | `category`, `type` | ✅ Yes |
+| Column | Also recognised as | Required |
+|--------|--------------------|----------|
+| `name` | `business_name` | ✅ |
+| `email` | `emails`, `email_address` | ✅ |
+| `city` | `location` | ✅ |
+| `business_category` | `category`, `type` | ✅ |
 | `phone_number` | `phone`, `contact` | Optional |
 | `facebook` | `facebook_url`, `fb` | Optional |
 | `review_score` | `rating`, `stars` | Optional |
 
-**Example row:**
+**Example:**
 ```csv
 name,email,city,business_category,phone_number,review_score
-Rustic Scruff Grooming,hello@rusticscruff.com,"Coal City, IL",pet_groomer,+1 815-518-5153,4.9
+Rustic Scruff,hello@rusticscruff.com,Coal City,pet_groomer,+1-815-518-5153,4.9
 ```
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                    Browser (React 18)                │
-│   Import → Configure → Generate → Review → Send     │
-└──────────────────────┬──────────────────────────────┘
-                       │ REST API (axios)
-┌──────────────────────▼──────────────────────────────┐
-│              FastAPI Backend (Python 3.11)           │
-│                                                      │
-│  /api/campaigns    /api/leads     /api/drafts        │
-│  /api/campaigns/{id}/draft-all   /api/{id}/send      │
-└────────┬──────────────────────┬───────────────────── ┘
-         │ SQLAlchemy           │ google-generativeai
-┌────────▼────────┐    ┌────────▼────────────────────┐
-│  SQLite (Docker │    │  Gemini 1.5 Flash            │
-│  named volume)  │    │  gemini-1.5-flash model      │
-└─────────────────┘    └─────────────────────────────┘
-```
-
-**Docker Compose services:**
-- `backend` — FastAPI on port 8000, SQLite on `/app/db` volume
-- `frontend` — React build served by nginx on port 3000
-- `caddy` — Reverse proxy with auto-HTTPS (for your domain / Cloudflare Tunnel)
-
----
-
-## Deploying with Cloudflare Tunnel (Homelab)
-
-If you're running this on a homelab server and want to access it from anywhere:
-
-1. Install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/get-started/) on your server
-2. Create a tunnel pointing to `http://localhost:80`
-3. Update `Caddyfile` — replace `outreach.yourdomain.com` with your tunnel hostname
-4. Run `docker compose up -d`
-
----
-
-## Troubleshooting
-
-**"No Gemini API key available"**
-```
-→ Open .env and check GEMINI_API_KEY is filled in (not the placeholder)
-→ Run: docker compose restart backend
-```
-
-**"Gmail authentication failed" or SMTP error**
-```
-→ You must use an App Password, not your regular Gmail password
-→ Regular passwords stopped working for SMTP in 2022
-→ Re-generate your App Password at myaccount.google.com/apppasswords
-```
-
-**Emails going to spam**
-```
-→ The 3–8 second delay between sends is already built in
-→ Make sure your subject line contains the business name (Gemini does this by default)
-→ Avoid sending more than 100 emails/day from a fresh Gmail account
-→ Warm up your sending address before large campaigns
-```
-
-**Drafts stuck on "Drafting…"**
-```
-→ Check backend logs: docker compose logs backend --tail=50
-→ Usually a Gemini API rate limit — wait 60 seconds and click Retry on the stuck lead
-→ Free Gemini tier: 15 requests/minute — for large batches use a paid key
-```
-
-**"No approved drafts to send"**
-```
-→ Go back to Review screen and click Approve on the emails you want to send
-```
-
----
-
-## Phase 2 Roadmap
-
-These features are planned for after the MVP:
-
-- [ ] **Open/click tracking** — pixel + link wrapper to track engagement
-- [ ] **Reply detection** — IMAP polling to detect replies automatically
-- [ ] **Follow-up sequences** — automated Day 3, Day 7 follow-ups
-- [ ] **CRM board** — Kanban: Contacted → Replied → Call Booked → Won
-- [ ] **Multi-provider AI** — Grok, Claude fallback if Gemini is down
-- [ ] **Domain warm-up advisor** — guidance on safe send volumes
-- [ ] **LinkedIn outreach** — extend beyond email
 
 ---
 
@@ -267,23 +205,24 @@ These features are planned for after the MVP:
 ```
 OutreachOS/
 ├── backend/
-│   ├── main.py          # FastAPI app — all 10 API endpoints
-│   ├── models.py        # SQLAlchemy ORM — Campaign, Lead, Draft, SendLog
+│   ├── main.py          # FastAPI — all API endpoints
+│   ├── ai.py            # Multi-provider AI — parallel dispatcher, rate limiting, fallback
+│   ├── email_sender.py  # SMTP sender with STARTTLS
+│   ├── models.py        # SQLAlchemy — Campaign, Lead, Draft, SendBatch, SendLog
 │   ├── schemas.py       # Pydantic request/response schemas
-│   ├── ai.py            # Gemini 1.5 Flash integration with retry
-│   ├── email_sender.py  # smtplib STARTTLS sender with anti-spam delay
 │   ├── database.py      # SQLite engine + session factory
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── screens/     # ImportScreen, ConfigureScreen, GenerateScreen,
-│   │   │                #   ReviewScreen, SendScreen
-│   │   ├── components/  # TopNav, StatusBadge, shadcn-style UI components
+│   │   ├── screens/     # ImportScreen, ConfigureScreen, GenerateScreen, ReviewScreen, SendScreen
+│   │   ├── components/  # TopNav, StatusBadge, shadcn/ui components
 │   │   ├── context/     # AppContext — global state
-│   │   └── lib/         # api.js (axios), utils.js (helpers)
+│   │   └── lib/         # api.js (axios), utils.js
 │   ├── Dockerfile
 │   └── nginx.conf
+├── docs/
+│   └── screenshots/
 ├── docker-compose.yml
 ├── Caddyfile
 ├── .env.example
@@ -292,19 +231,53 @@ OutreachOS/
 
 ---
 
-## Built by
+## Troubleshooting
 
-**[Arcen Studio](https://arcenstudio.com)** — Mumbai, India
+**"No AI provider configured"**
+```
+→ Add at least one API key in Configure → AI Configuration
+→ Or set GEMINI_API_KEY / GROQ_API_KEY in backend/.env
+```
 
-> Mehetab Ali (CTO) · Soham Sawant (CEO)
->
-> We build custom websites, full-stack apps, and AI-powered digital products.
-> Every project ships with a 95+ Lighthouse score and 30 days post-launch support.
+**Gmail authentication failed**
+```
+→ Use an App Password, not your real Gmail password
+→ Generate at: myaccount.google.com/apppasswords
+→ Enable 2-Step Verification first
+```
+
+**Emails going to spam**
+```
+→ 25–90s delays between emails are already built in
+→ Don't exceed 400 emails/day from a fresh Gmail account
+→ Warm up the sending address before large campaigns
+→ Avoid link-heavy or image-heavy emails
+```
+
+**Drafts stuck on "Drafting…"**
+```
+→ Check backend logs: docker compose logs backend --tail=50
+→ Usually a rate limit — the dispatcher auto-retries and falls back to next provider
+→ Click Redraft on any stuck lead to retry manually
+```
+
+---
+
+## Roadmap
+
+- [ ] Open/click tracking — pixel + link wrapper
+- [ ] Reply detection — IMAP polling
+- [ ] Follow-up sequences — Day 3, Day 7 automated
+- [ ] CRM board — Contacted → Replied → Call Booked → Won
+- [ ] Domain warm-up advisor
+- [ ] LinkedIn outreach module
 
 ---
 
 <div align="center">
 
-*OutreachOS is an internal tool. Use responsibly — personalize, delay, and respect unsubscribe requests.*
+**Built by [Arcen Studio](https://arcenstudio.com) — Mumbai, India**
+
+*We build custom websites, full-stack apps, and AI-powered products.*
 
 </div>
