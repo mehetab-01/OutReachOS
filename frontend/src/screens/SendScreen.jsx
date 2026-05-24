@@ -68,10 +68,6 @@ function BatchCard({ batch, smtp, onSent, onStop, onDelete, cooldownUntil }) {
   }, [sending]);
 
   const handleSend = async () => {
-    if (!smtp.user || !smtp.password) {
-      toast({ title: "Enter SMTP credentials first", variant: "destructive" });
-      return;
-    }
     try {
       await sendBatch(batch.id, { ...smtp, port: parseInt(smtp.port, 10) });
       setSending(true);
@@ -215,10 +211,9 @@ export default function SendScreen() {
     ]);
     setBatches(bl);
     setSendLog(sl);
-    if (smtp.user) {
-      const s = await getSendStats(campaign.id, smtp.user);
-      setStats(s);
-    }
+    // Always fetch stats — pass smtp.user if set, otherwise backend uses its own
+    const s = await getSendStats(campaign.id, smtp.user || "");
+    setStats(s);
   }, [campaign?.id, smtp.user]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
@@ -253,10 +248,6 @@ export default function SendScreen() {
   };
 
   const handleSendAll = async () => {
-    if (!smtp.user || !smtp.password) {
-      toast({ title: "Enter SMTP credentials first", variant: "destructive" });
-      return;
-    }
     setSendingAll(true);
     try {
       await sendAllBatches(campaign.id, { ...smtp, port: parseInt(smtp.port, 10) });
@@ -296,9 +287,14 @@ export default function SendScreen() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* SMTP Config */}
         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
-          <p className="font-semibold text-sm flex items-center gap-2">
-            <Server size={15} className="text-primary" /> SMTP Configuration
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="font-semibold text-sm flex items-center gap-2">
+              <Server size={15} className="text-primary" /> SMTP Configuration
+            </p>
+            <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-medium">
+              Backend defaults active
+            </span>
+          </div>
           {[
             ["SMTP Host", "host", "smtp.gmail.com", "text"],
             ["Port", "port", "587", "text"],
@@ -393,7 +389,7 @@ export default function SendScreen() {
                   size="sm"
                   className="gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
                   onClick={handleSendAll}
-                  disabled={sendingAll || anyBatchSending || !smtp.user || !smtp.password}
+                  disabled={sendingAll || anyBatchSending}
                 >
                   <Zap size={11} />
                   {sendingAll ? "Starting…" : `Send All ${pendingBatches.length} Batches`}

@@ -32,6 +32,18 @@ from schemas import (
 
 load_dotenv()
 
+
+def _resolve_smtp(cfg: "SmtpConfigSchema") -> "SmtpConfigSchema":
+    """Fill any blank SMTP fields from .env so frontend credentials are optional."""
+    from schemas import SmtpConfig as SmtpConfigSchema
+    return SmtpConfigSchema(
+        host=cfg.host or os.environ.get("SMTP_HOST", "smtp.gmail.com"),
+        port=cfg.port or int(os.environ.get("SMTP_PORT", 587)),
+        user=cfg.user or os.environ.get("SMTP_USER", ""),
+        password=cfg.password or os.environ.get("SMTP_PASS", ""),
+    )
+
+
 Base.metadata.create_all(bind=engine)
 
 # Safe migrations for columns added after initial deploy
@@ -440,6 +452,7 @@ def _sent_all_time(db: Session, smtp_user: str) -> int:
 
 @app.get("/api/campaigns/{campaign_id}/send-stats")
 def get_send_stats(campaign_id: int, smtp_user: str = "", db: Session = Depends(get_db)):
+    smtp_user = smtp_user or os.environ.get("SMTP_USER", "")
     today = _sent_today(db, smtp_user)
     return {
         "today": today,
@@ -641,6 +654,7 @@ async def send_batch(
     campaign = db.query(Campaign).filter(Campaign.id == batch.campaign_id).first()
     sender_name = campaign.sender_name
     sender_email = campaign.sender_email
+    smtp_config = _resolve_smtp(smtp_config)
 
     stop_event = asyncio.Event()
     _sending_batches[batch_id] = stop_event
@@ -678,6 +692,7 @@ async def send_all_batches(
     batch_ids = [b.id for b in pending_batches]
     sender_name = campaign.sender_name
     sender_email = campaign.sender_email
+    smtp_config = _resolve_smtp(smtp_config)
 
     async def _send_all_sequentially():
         for i, bid in enumerate(batch_ids):

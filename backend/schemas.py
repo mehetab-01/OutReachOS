@@ -77,10 +77,10 @@ class DraftPatch(BaseModel):
 
 
 class SmtpConfig(BaseModel):
-    host: str
-    port: int
-    user: str
-    password: str
+    host: str = ""
+    port: int = 587
+    user: str = ""
+    password: str = ""
 
 
 class SendBatchCreate(BaseModel):
