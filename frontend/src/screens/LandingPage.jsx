@@ -58,7 +58,7 @@ export default function LandingPage({ onGetStarted }) {
       <header className="border-b border-gray-100 sticky top-0 bg-white/95 backdrop-blur z-50">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center text-white font-bold text-sm">O</div>
+            <img src="/favicon.svg" alt="OutreachOS" className="w-7 h-7" />
             <span className="font-bold text-gray-900">OutreachOS</span>
             <span className="text-[10px] bg-primary-light text-primary px-1.5 py-0.5 rounded font-semibold">BETA</span>
           </div>
@@ -96,7 +96,7 @@ export default function LandingPage({ onGetStarted }) {
             </Button>
           </a>
         </div>
-        <p className="text-xs text-gray-400 mt-4">No signup required · Self-hosted · MIT License</p>
+        <p className="text-xs text-gray-400 mt-4">Sign in with Google · Self-hosted · MIT License</p>
       </section>
 
       {/* Screenshot hero */}

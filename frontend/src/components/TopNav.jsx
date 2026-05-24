@@ -28,9 +28,7 @@ export default function TopNav() {
       <div className="max-w-[1200px] mx-auto px-3 sm:px-6 flex items-center gap-3 sm:gap-6 h-14">
         {/* Logo */}
         <div className="flex items-center gap-2 shrink-0">
-          <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
-            <span className="text-white text-xs font-bold">O</span>
-          </div>
+          <img src="/favicon.svg" alt="OutreachOS" className="w-7 h-7" />
           <span className="font-bold text-sm tracking-tight hidden sm:block">OutreachOS</span>
           <span className="text-[10px] font-semibold text-primary bg-primary-light px-2 py-0.5 rounded-full hidden sm:block">
             BETA
@@ -86,9 +84,10 @@ export default function TopNav() {
           <div className="flex items-center gap-2 shrink-0">
             {firebaseUser.photoURL ? (
               <img
-                src={firebaseUser.photoURL}
-                alt={firebaseUser.displayName}
-                className="w-7 h-7 rounded-full border border-gray-200"
+                src={`${firebaseUser.photoURL}?sz=56`}
+                alt={firebaseUser.displayName || "User"}
+                referrerPolicy="no-referrer"
+                className="w-7 h-7 rounded-full border border-gray-200 object-cover"
               />
             ) : (
               <div className="w-7 h-7 rounded-full bg-primary-light flex items-center justify-center text-primary text-xs font-bold">

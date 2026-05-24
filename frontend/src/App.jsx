@@ -7,6 +7,7 @@ import ReviewScreen from "./screens/ReviewScreen";
 import SendScreen from "./screens/SendScreen";
 import LandingPage from "./screens/LandingPage";
 import AuthScreen from "./screens/AuthScreen";
+import NotFoundScreen from "./screens/NotFoundScreen";
 import { Toaster } from "./components/ui/toaster";
 
 const SCREENS = {
@@ -49,7 +50,16 @@ function Router() {
     );
   }
 
-  const Screen = SCREENS[screen] || ImportScreen;
+  const Screen = SCREENS[screen];
+
+  if (!Screen) {
+    return (
+      <>
+        <NotFoundScreen onBack={() => setScreen("import")} />
+        <Toaster />
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
