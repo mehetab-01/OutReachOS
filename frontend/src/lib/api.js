@@ -1,14 +1,19 @@
 import axios from "axios";
+import { getIdToken } from "./firebase";
 
 const BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
 
 export const api = axios.create({ baseURL: BASE_URL });
 
-api.interceptors.request.use((config) => {
+api.interceptors.request.use(async (config) => {
+  // Attach Firebase ID token
+  const token = await getIdToken();
+  if (token) config.headers["Authorization"] = `Bearer ${token}`;
+
+  // Attach AI provider config from session
   const providers = JSON.parse(sessionStorage.getItem("ai_providers") || "[]");
   if (providers.length > 0) {
     config.headers["X-AI-Providers"] = JSON.stringify(providers);
-    // legacy single-key compat
     const first = providers[0];
     if (first?.key) config.headers["X-Gemini-Key"] = first.key;
     if (first?.model) config.headers["X-Gemini-Model"] = first.model;

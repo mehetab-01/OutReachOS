@@ -1,5 +1,6 @@
 import { useApp } from "../context/AppContext";
-import { Upload, Settings, Zap, Eye, Send, ChevronRight } from "lucide-react";
+import { Upload, Settings, Zap, Eye, Send, ChevronRight, LogOut } from "lucide-react";
+import { signOutUser } from "../lib/firebase";
 
 const STEPS = [
   { id: "import", label: "Import", icon: Upload, step: "01" },
@@ -12,7 +13,13 @@ const STEPS = [
 const SCREEN_ORDER = ["import", "configure", "generate", "review", "send"];
 
 export default function TopNav() {
-  const { screen, setScreen, leads } = useApp();
+  const { screen, setScreen, leads, firebaseUser, setFirebaseUser } = useApp();
+
+  const handleSignOut = async () => {
+    await signOutUser();
+    setFirebaseUser(null);
+    setScreen("home");
+  };
   const currentIdx = SCREEN_ORDER.indexOf(screen);
   const sentCount = leads.filter((l) => l.draft?.status === "sent").length;
 
@@ -71,6 +78,30 @@ export default function TopNav() {
         {leads.length > 0 && (
           <div className="text-xs text-gray-400 shrink-0 hidden sm:block">
             {leads.length} leads · {sentCount} sent
+          </div>
+        )}
+
+        {/* User avatar + sign out */}
+        {firebaseUser && (
+          <div className="flex items-center gap-2 shrink-0">
+            {firebaseUser.photoURL ? (
+              <img
+                src={firebaseUser.photoURL}
+                alt={firebaseUser.displayName}
+                className="w-7 h-7 rounded-full border border-gray-200"
+              />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-primary-light flex items-center justify-center text-primary text-xs font-bold">
+                {firebaseUser.displayName?.[0] || firebaseUser.email?.[0] || "U"}
+              </div>
+            )}
+            <button
+              onClick={handleSignOut}
+              className="text-gray-400 hover:text-red-500 transition-colors"
+              title="Sign out"
+            >
+              <LogOut size={14} />
+            </button>
           </div>
         )}
       </div>

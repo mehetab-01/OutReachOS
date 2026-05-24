@@ -1,5 +1,7 @@
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { getLeads } from "../lib/api";
+import { auth } from "../lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 
 const AppContext = createContext(null);
 
@@ -23,6 +25,16 @@ export function AppProvider({ children }) {
   const [campaignForm, setCampaignForm] = useState(DEFAULT_CAMPAIGN);
   const [leads, setLeads] = useState([]);
   const [rawLeads, setRawLeads] = useState([]);
+  const [firebaseUser, setFirebaseUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setFirebaseUser(user);
+      setAuthLoading(false);
+    });
+    return unsub;
+  }, []);
 
   const refreshLeads = useCallback(async (campaignId) => {
     if (!campaignId) return;
@@ -39,6 +51,8 @@ export function AppProvider({ children }) {
         leads, setLeads,
         rawLeads, setRawLeads,
         refreshLeads,
+        firebaseUser, setFirebaseUser,
+        authLoading,
       }}
     >
       {children}

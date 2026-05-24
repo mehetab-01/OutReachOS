@@ -12,6 +12,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ai import draft_lead, build_lanes, ParallelDispatcher, AVAILABLE_MODELS, PROVIDERS
+from auth import get_current_user
 from database import Base, engine, get_db
 from email_sender import SmtpConfig
 from email_sender import send_email
@@ -56,6 +57,11 @@ with engine.connect() as conn:
         conn.execute(text("ALTER TABLE drafts ADD COLUMN model_used TEXT"))
     if "batch_id" not in draft_cols:
         conn.execute(text("ALTER TABLE drafts ADD COLUMN batch_id INTEGER REFERENCES send_batches(id)"))
+
+    # campaigns migrations
+    camp_cols = [c["name"] for c in insp.get_columns("campaigns")]
+    if "user_id" not in camp_cols:
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"))
 
     # send_logs migrations
     if insp.has_table("send_logs"):
@@ -124,8 +130,12 @@ def list_models():
 # ── Campaigns ──────────────────────────────────────────────────────────────────
 
 @app.post("/api/campaigns", response_model=CampaignOut)
-def create_campaign(body: CampaignCreate, db: Session = Depends(get_db)):
-    campaign = Campaign(**body.model_dump())
+def create_campaign(
+    body: CampaignCreate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    campaign = Campaign(user_id=user["uid"], **body.model_dump())
     db.add(campaign)
     db.commit()
     db.refresh(campaign)
@@ -133,13 +143,27 @@ def create_campaign(body: CampaignCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/api/campaigns", response_model=List[CampaignOut])
-def list_campaigns(db: Session = Depends(get_db)):
-    return db.query(Campaign).order_by(Campaign.created_at.desc()).all()
+def list_campaigns(
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    return (
+        db.query(Campaign)
+        .filter(Campaign.user_id == user["uid"])
+        .order_by(Campaign.created_at.desc())
+        .all()
+    )
 
 
 @app.get("/api/campaigns/{campaign_id}", response_model=CampaignOut)
-def get_campaign(campaign_id: int, db: Session = Depends(get_db)):
-    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+def get_campaign(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    campaign = db.query(Campaign).filter(
+        Campaign.id == campaign_id, Campaign.user_id == user["uid"]
+    ).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     return campaign
@@ -148,8 +172,15 @@ def get_campaign(campaign_id: int, db: Session = Depends(get_db)):
 # ── Leads ──────────────────────────────────────────────────────────────────────
 
 @app.post("/api/campaigns/{campaign_id}/leads", response_model=List[LeadOut])
-def upload_leads(campaign_id: int, leads: List[LeadIn], db: Session = Depends(get_db)):
-    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+def upload_leads(
+    campaign_id: int,
+    leads: List[LeadIn],
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    campaign = db.query(Campaign).filter(
+        Campaign.id == campaign_id, Campaign.user_id == user["uid"]
+    ).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
@@ -169,7 +200,16 @@ def upload_leads(campaign_id: int, leads: List[LeadIn], db: Session = Depends(ge
 
 
 @app.get("/api/campaigns/{campaign_id}/leads", response_model=List[LeadOut])
-def get_leads(campaign_id: int, db: Session = Depends(get_db)):
+def get_leads(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    campaign = db.query(Campaign).filter(
+        Campaign.id == campaign_id, Campaign.user_id == user["uid"]
+    ).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
     return (
         db.query(Lead)
         .filter(Lead.campaign_id == campaign_id)
@@ -374,12 +414,15 @@ def draft_all_status(campaign_id: int, db: Session = Depends(get_db)):
 async def draft_all(
     campaign_id: int,
     db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
     x_ai_providers: Optional[str] = Header(default=None),
     x_gemini_key: Optional[str] = Header(default=None),
     x_gemini_keys: Optional[str] = Header(default=None),
     x_gemini_model: Optional[str] = Header(default=None),
 ):
-    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    campaign = db.query(Campaign).filter(
+        Campaign.id == campaign_id, Campaign.user_id == user["uid"]
+    ).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
@@ -451,7 +494,12 @@ def _sent_all_time(db: Session, smtp_user: str) -> int:
 # ── Stats ──────────────────────────────────────────────────────────────────────
 
 @app.get("/api/campaigns/{campaign_id}/send-stats")
-def get_send_stats(campaign_id: int, smtp_user: str = "", db: Session = Depends(get_db)):
+def get_send_stats(
+    campaign_id: int,
+    smtp_user: str = "",
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     smtp_user = smtp_user or os.environ.get("SMTP_USER", "")
     today = _sent_today(db, smtp_user)
     return {
@@ -466,7 +514,11 @@ def get_send_stats(campaign_id: int, smtp_user: str = "", db: Session = Depends(
 # ── Batch management ───────────────────────────────────────────────────────────
 
 @app.get("/api/campaigns/{campaign_id}/batches", response_model=List[SendBatchOut])
-def list_batches(campaign_id: int, db: Session = Depends(get_db)):
+def list_batches(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     return (
         db.query(SendBatch)
         .filter(SendBatch.campaign_id == campaign_id)
@@ -480,9 +532,12 @@ def create_batches(
     campaign_id: int,
     body: SendBatchCreate,
     db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     """Split all approved leads into batches of batch_size. Returns created batches."""
-    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    campaign = db.query(Campaign).filter(
+        Campaign.id == campaign_id, Campaign.user_id == user["uid"]
+    ).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
@@ -670,9 +725,12 @@ async def send_all_batches(
     campaign_id: int,
     smtp_config: SmtpConfigSchema,
     db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     """Start all pending/paused batches sequentially as a true async task."""
-    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    campaign = db.query(Campaign).filter(
+        Campaign.id == campaign_id, Campaign.user_id == user["uid"]
+    ).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
@@ -728,7 +786,11 @@ def batch_status(batch_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/api/campaigns/{campaign_id}/sendlog")
-def get_sendlog(campaign_id: int, db: Session = Depends(get_db)):
+def get_sendlog(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     logs = (
         db.query(SendLog)
         .join(Lead)

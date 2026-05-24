@@ -1,5 +1,8 @@
 # Environment
 .env
+
+# Firebase service account (never commit)
+backend/firebase-service-account.json
 *.env.local
 
 # Python

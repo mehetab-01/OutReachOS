@@ -8,6 +8,7 @@ class Campaign(Base):
     __tablename__ = "campaigns"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, nullable=False, index=True)  # Firebase UID
     name = Column(String, nullable=False)
     pitch = Column(Text, nullable=False)
     services = Column(Text, nullable=False)

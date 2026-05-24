@@ -6,6 +6,7 @@ import GenerateScreen from "./screens/GenerateScreen";
 import ReviewScreen from "./screens/ReviewScreen";
 import SendScreen from "./screens/SendScreen";
 import LandingPage from "./screens/LandingPage";
+import AuthScreen from "./screens/AuthScreen";
 import { Toaster } from "./components/ui/toaster";
 
 const SCREENS = {
@@ -17,13 +18,32 @@ const SCREENS = {
 };
 
 function Router() {
-  const { screen, setScreen } = useApp();
+  const { screen, setScreen, firebaseUser, setFirebaseUser, authLoading } = useApp();
 
-  // Show landing page until user explicitly enters the app
+  // Firebase auth still initialising — show nothing to avoid flash
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold animate-pulse">O</div>
+      </div>
+    );
+  }
+
+  // Landing page — always accessible
   if (screen === "home") {
     return (
       <>
-        <LandingPage onGetStarted={() => setScreen("import")} />
+        <LandingPage onGetStarted={() => setScreen(firebaseUser ? "import" : "auth")} />
+        <Toaster />
+      </>
+    );
+  }
+
+  // Auth gate — not signed in
+  if (!firebaseUser) {
+    return (
+      <>
+        <AuthScreen onAuth={(user) => { setFirebaseUser(user); setScreen("import"); }} />
         <Toaster />
       </>
     );
