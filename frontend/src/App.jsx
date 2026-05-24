@@ -5,6 +5,7 @@ import ConfigureScreen from "./screens/ConfigureScreen";
 import GenerateScreen from "./screens/GenerateScreen";
 import ReviewScreen from "./screens/ReviewScreen";
 import SendScreen from "./screens/SendScreen";
+import LandingPage from "./screens/LandingPage";
 import { Toaster } from "./components/ui/toaster";
 
 const SCREENS = {
@@ -16,7 +17,18 @@ const SCREENS = {
 };
 
 function Router() {
-  const { screen } = useApp();
+  const { screen, setScreen } = useApp();
+
+  // Show landing page until user explicitly enters the app
+  if (screen === "home") {
+    return (
+      <>
+        <LandingPage onGetStarted={() => setScreen("import")} />
+        <Toaster />
+      </>
+    );
+  }
+
   const Screen = SCREENS[screen] || ImportScreen;
 
   return (

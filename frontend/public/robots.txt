@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://outreachos.arcenstudio.com/sitemap.xml
+Sitemap: https://outreachos.tabcrypt.in/sitemap.xml

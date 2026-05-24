@@ -18,7 +18,7 @@ export const DEFAULT_CAMPAIGN = {
 };
 
 export function AppProvider({ children }) {
-  const [screen, setScreen] = useState("import");
+  const [screen, setScreen] = useState("home");
   const [campaign, setCampaign] = useState(null);
   const [campaignForm, setCampaignForm] = useState(DEFAULT_CAMPAIGN);
   const [leads, setLeads] = useState([]);

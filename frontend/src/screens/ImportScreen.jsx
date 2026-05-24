@@ -16,13 +16,20 @@ const SAMPLE_LEADS = [
 
 function normalizeRow(row) {
   const r = {};
+  // unnamed first column (empty header) → treat as business name
+  const firstVal = Object.entries(row)[0];
+  const unnamedName = (!firstVal[0].trim()) ? (firstVal[1] || "").trim() : "";
   for (const [k, v] of Object.entries(row)) {
     r[k.trim().toLowerCase().replace(/\s+/g, "_")] = (v || "").trim();
   }
+  // city + state/zip may be split across city and country columns
+  const cityPart = r.city || r.location || "";
+  const statePart = r.country || r.state || "";
+  const cityFull = cityPart && statePart ? `${cityPart}, ${statePart}` : cityPart || statePart;
   return {
-    name: r.name || r.business_name || "",
+    name: r.name || r.business_name || unnamedName || "",
     email: r.email || r.emails || r.email_address || "",
-    city: r.city || r.location || "",
+    city: cityFull,
     category: r.business_category || r.category || r.type || "",
     phone: r.phone || r.phone_number || r.contact || "",
     facebook_url: r.facebook || r.facebook_url || r.fb || "",
