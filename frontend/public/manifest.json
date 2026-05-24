@@ -1,6 +1,7 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "OutreachOS",
+  "name": "OutreachOS — AI Cold Email Automation",
+  "description": "AI-powered cold email platform by Arcen Studio",
   "icons": [
     {
       "src": "favicon.ico",
@@ -18,8 +19,8 @@
       "sizes": "512x512"
     }
   ],
-  "start_url": ".",
+  "start_url": "/",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "theme_color": "#6C63FF",
+  "background_color": "#F9FAFB"
 }
