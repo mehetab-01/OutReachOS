@@ -129,14 +129,14 @@ export default function GenerateScreen() {
   return (
     <div className="animate-fade-in">
       {/* Header */}
-      <div className="mb-8 flex justify-between items-end">
+      <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">AI Draft Engine</h1>
           <p className="text-gray-500 mt-2 text-sm">
             AI researches each business and writes a personalized cold email.
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           {drafted > 0 && !batchRunning && (
             <Button variant="outline" className="gap-2" onClick={() => setScreen("review")}>
               Review {drafted} Drafts <ArrowRight size={14} />
@@ -241,7 +241,7 @@ export default function GenerateScreen() {
           return (
             <div
               key={lead.id}
-              className="bg-white border border-gray-200 rounded-xl px-5 py-3.5 flex items-center gap-4 hover:border-gray-300 transition-all duration-150"
+              className="bg-white border border-gray-200 rounded-xl px-3 sm:px-5 py-3 sm:py-3.5 flex items-center gap-3 sm:gap-4 hover:border-gray-300 transition-all duration-150"
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2.5 mb-0.5">

@@ -97,19 +97,19 @@ export default function ReviewScreen() {
 
   return (
     <div className="animate-fade-in">
-      <div className="mb-6 flex justify-between items-end">
+      <div className="mb-6 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Review Queue</h1>
           <p className="text-gray-500 mt-2 text-sm">
             {drafted} drafted · {approved} approved · {sent} sent
           </p>
         </div>
-        <div className="flex gap-3">
-          <Button variant="outline" onClick={approveAll} disabled={drafted === 0}>
+        <div className="flex gap-3 flex-wrap">
+          <Button variant="outline" onClick={approveAll} disabled={drafted === 0} className="text-sm">
             Approve All Drafted
           </Button>
           <Button
-            className="bg-primary hover:bg-primary-dark gap-2"
+            className="bg-primary hover:bg-primary-dark gap-2 text-sm"
             onClick={() => setScreen("send")}
             disabled={approved === 0}
           >
@@ -118,10 +118,10 @@ export default function ReviewScreen() {
         </div>
       </div>
 
-      <div className="grid gap-5 min-h-[560px]" style={{ gridTemplateColumns: "280px 1fr" }}>
+      <div className="grid gap-5 grid-cols-1 lg:grid-cols-[260px_1fr] min-h-[400px] lg:min-h-[560px]">
         {/* Sidebar */}
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="overflow-y-auto max-h-[560px]">
+          <div className="overflow-y-auto max-h-[300px] lg:max-h-[560px]">
             {leads.length === 0 ? (
               <div className="p-8 text-center text-gray-400 text-sm">
                 No leads yet.{" "}

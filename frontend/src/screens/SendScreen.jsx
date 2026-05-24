@@ -112,7 +112,7 @@ function BatchCard({ batch, smtp, onSent, onStop, onDelete, cooldownUntil }) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2.5">
           <span className="font-bold text-gray-900 text-sm">{current.label}</span>
           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${statusColor}`}>
@@ -121,7 +121,7 @@ function BatchCard({ batch, smtp, onSent, onStop, onDelete, cooldownUntil }) {
             ) : current.status}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {current.status === "sending" && (
             <Button size="sm" variant="outline" className="text-xs gap-1 text-red-600 border-red-200 hover:bg-red-50" onClick={handleStop}>
               <Square size={10} /> Stop
@@ -284,7 +284,7 @@ export default function SendScreen() {
 
       {/* Stats bar */}
       {stats && (
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <StatPill label="Sent Today" value={stats.today} sub={`cap: ${stats.daily_cap}`} color="text-primary" bg="bg-primary-light" />
           <StatPill label="Remaining Today" value={stats.remaining_today} color="text-emerald-700" bg="bg-emerald-50" />
           <StatPill label="This Month" value={stats.this_month} bg="bg-blue-50" color="text-blue-700" />
@@ -293,7 +293,7 @@ export default function SendScreen() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* SMTP Config */}
         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
           <p className="font-semibold text-sm flex items-center gap-2">
@@ -379,12 +379,12 @@ export default function SendScreen() {
       {/* Batch cards */}
       {batches.length > 0 && (
         <div>
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
             <p className="font-semibold text-sm text-gray-800 flex items-center gap-2">
               <BarChart2 size={14} className="text-primary" />
               Send Batches
             </p>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <p className="text-xs text-gray-400">
                 25–90s delay · 10 min cooldown between batches
               </p>
@@ -431,12 +431,12 @@ export default function SendScreen() {
               <Download size={12} /> Export CSV
             </Button>
           </div>
-          <div className="max-h-64 overflow-y-auto">
+          <div className="max-h-64 overflow-y-auto overflow-x-auto">
             {sendLog.map((row, i) => (
-              <div key={i} className="flex items-center gap-4 px-5 py-2.5 border-b border-gray-50 text-sm">
+              <div key={i} className="flex items-center gap-3 px-4 sm:px-5 py-2.5 border-b border-gray-50 text-sm min-w-0">
                 <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />
-                <span className="font-medium text-gray-800 min-w-[140px] truncate">{row.lead_name}</span>
-                <span className="text-gray-400 flex-1 truncate text-xs">{row.lead_email}</span>
+                <span className="font-medium text-gray-800 truncate max-w-[120px] sm:min-w-[140px] sm:max-w-none">{row.lead_name}</span>
+                <span className="text-gray-400 flex-1 truncate text-xs hidden sm:block">{row.lead_email}</span>
                 {row.batch_id && (
                   <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-medium shrink-0">
                     {batches.find((b) => b.id === row.batch_id)?.label || `#${row.batch_id}`}

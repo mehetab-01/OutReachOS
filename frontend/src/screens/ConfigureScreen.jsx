@@ -207,7 +207,7 @@ export default function ConfigureScreen() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Agency details */}
         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-5">
           <p className="font-semibold text-sm flex items-center gap-2">

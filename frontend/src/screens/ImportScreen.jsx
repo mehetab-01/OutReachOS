@@ -72,13 +72,13 @@ export default function ImportScreen() {
         </p>
       </div>
 
-      <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 320px" }}>
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-[1fr_280px]">
         <div className="space-y-4">
           {/* Drop zone */}
           <div
             {...getRootProps()}
             className={`
-              border-2 border-dashed rounded-2xl p-16 text-center cursor-pointer transition-all duration-200
+              border-2 border-dashed rounded-2xl p-8 sm:p-16 text-center cursor-pointer transition-all duration-200
               ${isDragActive
                 ? "border-primary bg-primary-light"
                 : "border-gray-200 bg-white hover:border-primary hover:bg-[#EEEDFE]/30"

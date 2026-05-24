@@ -22,7 +22,7 @@ function Router() {
   return (
     <div className="min-h-screen bg-gray-50">
       <TopNav />
-      <main className="max-w-[1200px] mx-auto px-6 py-8">
+      <main className="max-w-[1200px] mx-auto px-3 sm:px-6 py-4 sm:py-8">
         <div key={screen} className="animate-fade-in">
           <Screen />
         </div>
