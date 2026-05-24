@@ -4,11 +4,13 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
-    env_file: .env
+    env_file: ./backend/.env
     volumes:
       - db_data:/app/db
+      - ./backend/firebase-service-account.json:/app/firebase-service-account.json:ro
     environment:
       - DATABASE_URL=sqlite:////app/db/outreachos.db
+      - ALLOWED_ORIGINS=https://outreachos.tabcrypt.in
     ports:
       - "8000:8000"
     healthcheck:
@@ -22,7 +24,7 @@ services:
     build:
       context: ./frontend
       args:
-        REACT_APP_API_URL: http://localhost:8000
+        REACT_APP_API_URL: https://outreachos.tabcrypt.in/api
     restart: unless-stopped
     ports:
       - "3000:80"

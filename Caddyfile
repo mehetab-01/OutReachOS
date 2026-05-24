@@ -2,9 +2,10 @@
 # Replace outreach.yourdomain.com with your actual domain
 # If using Cloudflare Tunnel, set this to your tunnel hostname
 
-outreach.yourdomain.com {
-    # API requests go to FastAPI backend
+outreachos.tabcrypt.in {
+    # API — strip /api prefix, proxy to FastAPI backend
     handle /api/* {
+        uri strip_prefix /api
         reverse_proxy backend:8000
     }
 
