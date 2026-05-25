@@ -1,7 +1,7 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --silent
+RUN npm install --silent
 COPY . .
 ARG REACT_APP_API_URL=/
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
